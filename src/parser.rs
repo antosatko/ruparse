@@ -4,10 +4,6 @@ use crate::{
 };
 
 use arena::{Arena, Key};
-use serde::{Deserialize, Serialize};
-use smol_str::SmolStr;
-
-const DEFAULT_ENTRY: &str = "entry";
 
 use crate::{
     grammar::{self, Grammar, MatchToken, OneOf},
@@ -35,6 +31,12 @@ pub struct Parser {
     pub entry: Option<Key<NodeTag>>,
     /// Option to enable error on eof
     pub eof_error: bool,
+}
+
+impl Default for Parser {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Parser {
@@ -119,7 +121,7 @@ impl Parser {
         text: &'a str,
     ) -> Result<Node<'a>, (ParseError<'a>, Node<'a>)> {
         #[cfg(feature = "debug")]
-        println!("-- start: {}, cursor: {:?}", name, cursor);
+        println!("-- start, cursor: {:?}", cursor);
         let mut node = match Node::from_grammar(grammar, name) {
             Ok(node) => node,
             Err(err) => return Err((err, Node::new("<dummy node>"))),
@@ -153,7 +155,7 @@ impl Parser {
         );
 
         #[cfg(feature = "debug")]
-        println!("-- end: {}, cursor: {:?}", name, cursor);
+        println!("-- end, cursor: {:?}", cursor);
 
         // If the node has not set the last_string_idx, we set it to the end of the last token
         if node.last_string_idx == 0 {
@@ -263,12 +265,10 @@ impl Parser {
                         TokenCompare::Is(val) => {
                             let is_token = val.is_token();
                             self.parse_parameters(
-                                grammar,
                                 lexer,
                                 parameters,
                                 cursor,
                                 globals,
-                                cursor_clone,
                                 node,
                                 &val,
                                 &mut msg_bus,
@@ -350,7 +350,7 @@ impl Parser {
                         match self.match_token(
                             grammar,
                             lexer,
-                            &token,
+                            token,
                             cursor,
                             globals,
                             cursor_clone,
@@ -363,12 +363,10 @@ impl Parser {
                                 found = true;
                                 let is_token = val.is_token();
                                 self.parse_parameters(
-                                    grammar,
                                     lexer,
                                     parameters,
                                     cursor,
                                     globals,
-                                    cursor_clone,
                                     node,
                                     &val,
                                     &mut msg_bus,
@@ -441,12 +439,10 @@ impl Parser {
                         Is(val) => {
                             let is_token = val.is_token();
                             self.parse_parameters(
-                                grammar,
                                 lexer,
                                 parameters,
                                 cursor,
                                 globals,
-                                cursor_clone,
                                 node,
                                 &val,
                                 &mut msg_bus,
@@ -470,13 +466,10 @@ impl Parser {
                             .push(&mut msg_bus);
                         }
                         IsNot(err) => {
-                            match err.node {
-                                Some(ref node) => {
-                                    if node.harderror {
-                                        return Err(err);
-                                    }
+                            if let Some(ref node) = err.node {
+                                if node.harderror {
+                                    return Err(err);
                                 }
-                                None => (),
                             }
                             self.parse_rules(
                                 grammar,
@@ -505,7 +498,7 @@ impl Parser {
                         match self.match_token(
                             grammar,
                             lexer,
-                            &token,
+                            token,
                             cursor,
                             globals,
                             cursor_clone,
@@ -516,12 +509,10 @@ impl Parser {
                                 found = true;
                                 let is_token = val.is_token();
                                 self.parse_parameters(
-                                    grammar,
                                     lexer,
                                     parameters,
                                     cursor,
                                     globals,
-                                    cursor_clone,
                                     node,
                                     &val,
                                     &mut msg_bus,
@@ -547,14 +538,13 @@ impl Parser {
                                 .push(&mut msg_bus);
                                 break;
                             }
-                            IsNot(err) => match err.node {
-                                Some(ref node) => {
+                            IsNot(err) => {
+                                if let Some(ref node) = err.node {
                                     if node.harderror {
                                         return Err(err);
                                     }
                                 }
-                                None => (),
-                            },
+                            }
                         }
                     }
                     if !found {
@@ -590,12 +580,10 @@ impl Parser {
                         TokenCompare::Is(val) => {
                             let is_token = val.is_token();
                             self.parse_parameters(
-                                grammar,
                                 lexer,
                                 parameters,
                                 cursor,
                                 globals,
-                                cursor_clone,
                                 node,
                                 &val,
                                 &mut msg_bus,
@@ -619,14 +607,13 @@ impl Parser {
                             .push(&mut msg_bus);
                             advance = false;
                         }
-                        TokenCompare::IsNot(err) => match err.node {
-                            Some(ref node) => {
+                        TokenCompare::IsNot(err) => {
+                            if let Some(ref node) = err.node {
                                 if node.harderror {
                                     return Err(err);
                                 }
                             }
-                            None => (),
-                        },
+                        }
                     }
                     #[cfg(feature = "debug")]
                     println!("WHILE DONE, CURSOR.TO_ADVANCE = {}", cursor.to_advance);
@@ -660,12 +647,10 @@ impl Parser {
                         }
                     }
                     self.parse_parameters(
-                        grammar,
                         lexer,
                         parameters,
                         cursor,
                         globals,
-                        cursor_clone,
                         node,
                         &Nodes::Token(tokens[cursor.idx].clone()),
                         &mut msg_bus,
@@ -860,12 +845,10 @@ impl Parser {
                                     found = true;
                                     let is_token = val.is_token();
                                     self.parse_parameters(
-                                        grammar,
                                         lexer,
                                         parameters,
                                         cursor,
                                         globals,
-                                        cursor_clone,
                                         node,
                                         &val,
                                         &mut msg_bus,
@@ -889,14 +872,13 @@ impl Parser {
                                     .push(&mut msg_bus);
                                     break;
                                 }
-                                IsNot(err) => match err.node {
-                                    Some(ref node) => {
+                                IsNot(err) => {
+                                    if let Some(ref node) = err.node {
                                         if node.harderror {
                                             return Err(err);
                                         }
                                     }
-                                    None => (),
-                                },
+                                }
                             }
                         }
                         if found {
@@ -921,7 +903,7 @@ impl Parser {
                     #[cfg(feature = "std")]
                     {
                         match target {
-                            Some(ident) => {
+                            Some(_ident) => {
                                 // let kind = match node.variables.get(ident) {
                                 //     Some(kind) => kind,
                                 //     None => {
@@ -967,16 +949,14 @@ impl Parser {
                             if j >= rules.len() {
                                 return Ok(Msg::Goto(label));
                             }
-                            match &rules[j] {
-                                grammar::Rule::Command {
-                                    command: grammar::Commands::Label { name },
-                                } => {
-                                    if *name == label {
-                                        i = j;
-                                        break;
-                                    }
+                            if let grammar::Rule::Command {
+                                command: grammar::Commands::Label { name },
+                            } = &rules[j]
+                            {
+                                if *name == label {
+                                    i = j;
+                                    break;
                                 }
-                                _ => {}
                             }
                             j += 1;
                         }
@@ -988,6 +968,21 @@ impl Parser {
                         i -= steps;
                     }
                     Msg::Ok => {}
+                }
+            }
+            if cursor.to_advance {
+                cursor.to_advance = false;
+                cursor.idx += 1;
+                if cursor.idx >= tokens.len() {
+                    if self.eof_error {
+                        return Err(ParseError {
+                            kind: ParseErrors::Eof,
+                            location: tokens[cursor.idx - 1].location.clone(),
+                            node: Some(node.clone()),
+                        });
+                    } else {
+                        cursor.idx -= 1;
+                    }
                 }
             }
         }
@@ -1007,15 +1002,15 @@ impl Parser {
     ) -> Result<TokenCompare<'a>, ParseError<'a>> {
         match token {
             grammar::MatchToken::Token(tok) => {
-                if *tok == TokenKinds::Control(crate::lexer::ControlTokenKind::Eof) {
-                    if cursor.idx >= tokens.len() {
-                        return Ok(TokenCompare::Is(Nodes::Token(Token {
-                            kind: TokenKinds::Control(crate::lexer::ControlTokenKind::Eof),
-                            index: 0,
-                            len: 0,
-                            location: TextLocation::new(0, 0),
-                        })));
-                    }
+                if *tok == TokenKinds::Control(crate::lexer::ControlTokenKind::Eof)
+                    && cursor.idx >= tokens.len()
+                {
+                    return Ok(TokenCompare::Is(Nodes::Token(Token {
+                        kind: TokenKinds::Control(crate::lexer::ControlTokenKind::Eof),
+                        index: 0,
+                        len: 0,
+                        location: TextLocation::new(0, 0),
+                    })));
                 }
                 if cursor.idx >= tokens.len() {
                     return Ok(TokenCompare::IsNot(ParseError {
@@ -1026,6 +1021,9 @@ impl Parser {
                 }
                 let mut current_token = &tokens[cursor.idx];
                 while current_token.kind.is_whitespace() {
+                    if *tok == current_token.kind {
+                        return Ok(TokenCompare::Is(Nodes::Token(current_token.clone())));
+                    }
                     cursor.idx += 1;
                     current_token = &tokens[cursor.idx];
                 }
@@ -1046,9 +1044,9 @@ impl Parser {
                     Ok(node) => return Ok(TokenCompare::Is(Nodes::Node(node))),
                     Err((err, node)) => match node.harderror {
                         true => return Err(err),
-                        false => return Ok(TokenCompare::IsNot(err)),
+                        false => Ok(TokenCompare::IsNot(err)),
                     },
-                };
+                }
             }
             grammar::MatchToken::Word(word) => {
                 let mut current_token = &tokens[cursor.idx];
@@ -1057,7 +1055,7 @@ impl Parser {
                     current_token = &tokens[cursor.idx];
                 }
                 if let TokenKinds::Text = current_token.kind {
-                    if word != &lexer.stringify(&current_token, text) {
+                    if word != &lexer.stringify(current_token, text) {
                         return Ok(TokenCompare::IsNot(ParseError {
                             kind: ParseErrors::ExpectedWord {
                                 expected: word.to_string(),
@@ -1081,19 +1079,12 @@ impl Parser {
             }
             grammar::MatchToken::Enumerator(enumerator) => {
                 #[cfg(feature = "debug")]
-                println!(
-                    "keys: {:?}",
-                    grammar.enumerators.keys().collect::<Vec<&String>>()
-                );
-                #[cfg(feature = "debug")]
-                println!("key: {enumerator}");
-                #[cfg(feature = "debug")]
                 println!("got: {}", grammar.enumerators.get(enumerator).is_some());
                 let enumerator = match grammar.enumerators.get(enumerator) {
                     Some(enumerator) => enumerator,
                     None => {
                         return Err(ParseError {
-                            kind: ParseErrors::EnumeratorNotFound(enumerator.clone()),
+                            kind: ParseErrors::EnumeratorNotFound(*enumerator),
                             location: tokens[cursor.idx].location.clone(),
                             node: None,
                         });
@@ -1105,7 +1096,7 @@ impl Parser {
                     if i >= enumerator.values.len() {
                         return Ok(TokenCompare::IsNot(ParseError {
                             kind: ParseErrors::ExpectedOneOf {
-                                expected: enumerator.values.iter().map(|x| x.clone()).collect(),
+                                expected: enumerator.values.iter().cloned().collect(),
                                 found: tokens[cursor.idx].kind.clone(),
                             },
                             location: tokens[cursor.idx].location.clone(),
@@ -1148,18 +1139,16 @@ impl Parser {
 
     fn parse_parameters<'a>(
         &'a self,
-        _grammar: &Grammar,
-        _lexer: &Lexer,
+        lexer: &Lexer,
         parameters: &Vec<grammar::Parameters>,
         cursor: &mut Cursor,
         globals: &mut Arena<VariableKind<'a>, GlobalVariableTag>,
-        _cursor_clone: &Cursor,
         node: &mut Node<'a>,
         value: &Nodes<'a>,
         bus: &mut MsgBus,
         tokens: &Vec<Token>,
-        _text: &str,
-    ) -> Result<(), ParseError> {
+        text: &str,
+    ) -> Result<(), ParseError<'a>> {
         for parameter in parameters {
             match parameter {
                 grammar::Parameters::Set(name) => {
@@ -1227,7 +1216,7 @@ impl Parser {
                         if cursor.idx >= tokens.len() {
                             println!("Eof");
                         } else {
-                            println!("{:?}", _lexer.stringify(&tokens[cursor.idx], _text));
+                            println!("{:?}", lexer.stringify(&tokens[cursor.idx], text));
                         }
                     }
                 },
@@ -1617,7 +1606,7 @@ impl<'a> Nodes<'a> {
         }
     }
 
-    pub fn unwrap_node(&self) -> &Node {
+    pub fn unwrap_node(&self) -> &Node<'_> {
         match self {
             Nodes::Node(node) => node,
             _ => panic!("unwrap_node called on {:#?}", self),
@@ -1670,15 +1659,15 @@ impl<'a> Node<'a> {
                 })
             }
         };
-        let mut node = Node::new(found.name.clone());
+        let mut node = Node::new(found.name);
         node.variables = Self::variables_from_grammar(&found.variables)?;
-        node.docs = found.docs.clone();
+        node.docs = found.docs;
         Ok(node)
     }
 
     pub fn variables_from_grammar<Tag>(
         variables: &Arena<grammar::VariableKind, Tag>,
-    ) -> Result<Arena<VariableKind, Tag>, ParseError> {
+    ) -> Result<Arena<VariableKind<'_>, Tag>, ParseError<'_>> {
         let mut result = Arena::new();
         for value in variables.iter() {
             let var = match value {
@@ -1745,14 +1734,14 @@ impl<'a> VariableKind<'a> {
         }
     }
 
-    pub fn unwrap_node(&self) -> &Nodes {
+    pub fn unwrap_node(&self) -> &Nodes<'_> {
         match self {
             VariableKind::Node(node) => node.as_ref().unwrap(),
             _ => panic!("unwrap_node called on {:#?}", self),
         }
     }
 
-    pub fn unwrap_node_list(&self) -> &Vec<Nodes> {
+    pub fn unwrap_node_list(&self) -> &Vec<Nodes<'_>> {
         match self {
             VariableKind::NodeList(list) => list,
             _ => panic!("unwrap_node_list called on {:#?}", self),
@@ -1790,7 +1779,7 @@ impl<'a> fmt::Debug for ParseError<'a> {
                 if let Some(docs) = &node.docs {
                     txt.push_str(&format!("\n{}", docs));
                 }
-                write!(f, "{}\n", txt)
+                writeln!(f, "{}", txt)
             }
             None => Ok(()),
         }
@@ -1806,7 +1795,7 @@ impl<'a> fmt::Display for ParseError<'a> {
                 if let Some(docs) = &node.docs {
                     txt.push_str(&format!("\n{}", docs));
                 }
-                write!(f, "{}\n", txt)
+                writeln!(f, "{}", txt)
             }
             None => Ok(()),
         }
@@ -1870,24 +1859,24 @@ impl<'a> fmt::Debug for ParseErrors<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             ParseErrors::ParserNotFullyImplemented => write!(f, "Parser not fully implemented"),
-            ParseErrors::NodeNotFound(name) => write!(f, "Node not found: working on it :)"),
+            ParseErrors::NodeNotFound(_name) => write!(f, "Node not found: working on it :)"),
             ParseErrors::ExpectedToken { expected, found } => {
                 write!(f, "Expected token {:?}, found {:?}", expected, found)
             }
             ParseErrors::ExpectedWord { expected, found } => {
                 write!(f, "Expected word {}, found {:?}", expected, found)
             }
-            ParseErrors::EnumeratorNotFound(name) => {
+            ParseErrors::EnumeratorNotFound(_name) => {
                 write!(f, "Enumerator not found: working on it :)")
             }
             ParseErrors::ExpectedToNotBe(kind) => write!(f, "Expected to not be {:?}", kind),
-            ParseErrors::VariableNotFound(name) => {
+            ParseErrors::VariableNotFound(_name) => {
                 write!(f, "Variable not found: working on it :)")
             }
-            ParseErrors::UncountableVariable(name, kind) => {
+            ParseErrors::UncountableVariable(_name, kind) => {
                 write!(f, "Uncountable variable: dont know<{:?}>", kind)
             }
-            ParseErrors::CannotSetVariable(name, kind) => {
+            ParseErrors::CannotSetVariable(_name, kind) => {
                 write!(f, "Cannot set variable: dont know<{:?}>", kind)
             }
             ParseErrors::Message(message) => write!(f, "{}", message),

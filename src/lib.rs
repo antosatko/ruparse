@@ -5,6 +5,8 @@ pub mod grammar;
 pub mod lexer;
 pub mod parser;
 
+pub use arena::Arena;
+
 // Choose between std and alloc
 cfg_if::cfg_if! {
     if #[cfg(feature = "std")] {
@@ -22,13 +24,17 @@ cfg_if::cfg_if! {
     }
 }
 
-use serde::{Deserialize, Serialize};
-
 #[derive(Debug, Clone)]
 pub struct Parser<'a> {
     pub lexer: lexer::Lexer,
     pub grammar: grammar::Grammar<'a>,
     pub parser: parser::Parser,
+}
+
+impl<'a> Default for Parser<'a> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<'a> Parser<'a> {
@@ -55,12 +61,11 @@ impl<'a> Parser<'a> {
 #[cfg(feature = "std")]
 mod tests {
 
-    use core::fmt::Debug;
-    use std::io::Write;
+    use core::panic;
 
     use arena::Arena;
 
-    use crate::{lexer::TokenKinds, parser::ParseResult};
+    use crate::lexer::TokenKinds;
 
     use self::grammar::{Parameters, VariableKind};
 
@@ -110,7 +115,7 @@ mod tests {
     fn unfinished_token() {
         let mut parser = Parser::new();
         let txt = "fun";
-        parser.lexer.add_token("function".into());
+        parser.lexer.add_token("function");
         let tokens = parser.lexer.lex_utf8(txt).unwrap();
         assert_eq!(tokens[0].kind, TokenKinds::Text);
     }
@@ -118,36 +123,37 @@ mod tests {
     #[test]
     fn rules() {
         let mut parser = Parser::new();
-        let txt = "let   danda=  1+60";
-        parser.lexer.add_token("=".into());
-        parser.lexer.add_token(":".into());
-        parser.lexer.add_token("+".into());
-        parser.lexer.add_token(";".into());
-        parser.lexer.add_token("-".into());
-        parser.lexer.add_token("*".into());
-        parser.lexer.add_token("/".into());
+        let txt = "let   danda=  1+60;";
+        parser.lexer.add_token("=");
+        parser.lexer.add_token(":");
+        parser.lexer.add_token("+");
+        parser.lexer.add_token(";");
+        parser.lexer.add_token("-");
+        parser.lexer.add_token("*");
+        parser.lexer.add_token("/");
 
         let tokens = parser.lexer.lex_utf8(txt).unwrap();
 
         let operators = parser.grammar.enumerators.push(grammar::Enumerator {
             name: "operators",
-            values: vec![
+            values: [
                 grammar::MatchToken::Token(TokenKinds::Token("+".into())),
                 grammar::MatchToken::Token(TokenKinds::Token("-".into())),
                 grammar::MatchToken::Token(TokenKinds::Token("*".into())),
                 grammar::MatchToken::Token(TokenKinds::Token("/".into())),
-            ],
+            ]
+            .to_vec(),
         });
         let mut variables = Arena::new();
-        let nodes = variables.push(VariableKind::NodeList);
+        let value_nodes = variables.push(VariableKind::NodeList);
         let value = parser.grammar.add_node(grammar::Node {
             name: "value",
-            rules: vec![
+            rules: [
                 // detect the value[0]
                 grammar::Rule::Is {
                     token: grammar::MatchToken::Token(TokenKinds::Text),
                     rules: vec![],
-                    parameters: vec![Parameters::Set(nodes)],
+                    parameters: vec![Parameters::Set(value_nodes)],
                 },
                 // detect the operator
                 grammar::Rule::While {
@@ -156,22 +162,23 @@ mod tests {
                     rules: vec![grammar::Rule::Is {
                         token: grammar::MatchToken::Token(TokenKinds::Text),
                         rules: vec![],
-                        parameters: vec![Parameters::Set(nodes)],
+                        parameters: vec![Parameters::Set(value_nodes)],
                     }],
-                    parameters: vec![Parameters::Set(nodes)],
+                    parameters: vec![Parameters::Set(value_nodes)],
                 },
-            ],
+            ]
+            .to_vec(),
             variables,
             docs: Some("value"),
         });
 
         let mut variables = Arena::new();
-        let ident = variables.push(VariableKind::Node);
-        let type_ = variables.push(VariableKind::Node);
-        let value_v = variables.push(VariableKind::Node);
+        let let_ident = variables.push(VariableKind::Node);
+        let let_type_ = variables.push(VariableKind::Node);
+        let let_value = variables.push(VariableKind::Node);
         let kw_let = parser.grammar.add_node(grammar::Node {
             name: "KWLet",
-            rules: vec![
+            rules: [
                 // detect the keyword
                 grammar::Rule::Is {
                     token: grammar::MatchToken::Word("let"),
@@ -182,7 +189,7 @@ mod tests {
                 grammar::Rule::Is {
                     token: grammar::MatchToken::Token(TokenKinds::Text),
                     rules: vec![],
-                    parameters: vec![Parameters::Set(ident)],
+                    parameters: vec![Parameters::Set(let_ident)],
                 },
                 // detect the type if it exists
                 grammar::Rule::Maybe {
@@ -190,7 +197,7 @@ mod tests {
                     is: vec![grammar::Rule::Is {
                         token: grammar::MatchToken::Token(TokenKinds::Text),
                         rules: vec![],
-                        parameters: vec![Parameters::Set(type_)],
+                        parameters: vec![Parameters::Set(let_type_)],
                     }],
                     isnt: vec![],
                     parameters: vec![],
@@ -201,7 +208,7 @@ mod tests {
                     is: vec![grammar::Rule::Is {
                         token: grammar::MatchToken::Node(value),
                         rules: vec![],
-                        parameters: vec![Parameters::Set(value_v)],
+                        parameters: vec![Parameters::Set(let_value)],
                     }],
                     isnt: vec![],
                     parameters: vec![],
@@ -213,14 +220,37 @@ mod tests {
                     isnt: vec![],
                     parameters: vec![],
                 },
-            ],
+            ]
+            .to_vec(),
             variables,
             docs: Some("let <ident>[: <type>] [= <value>];"),
         });
         parser.parser.entry = Some(kw_let);
 
+        let valid = parser.grammar.validate(&parser.lexer);
+        if !valid.success() {
+            for warn in valid.warnings {
+                println!("{}", warn);
+            }
+            for err in valid.errors {
+                println!("{}", err);
+            }
+            panic!()
+        }
+
         match parser.parse(&tokens, txt) {
-            Ok(_) => (),
+            Ok(res) => {
+                let entry = res.entry;
+                let ident = parser.lexer.stringify(
+                    entry
+                        .variables
+                        .get_unchecked(&let_ident)
+                        .unwrap_node()
+                        .unwrap_token(),
+                    txt,
+                );
+                println!("result: let {ident}");
+            }
             Err(e) => {
                 panic!("{e}");
             }

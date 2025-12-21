@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use smol_str::SmolStr;
 
 // Choose between std and alloc
@@ -107,6 +107,12 @@ impl TextLocation {
     }
 }
 
+impl Default for Lexer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Lexer {
     pub fn new() -> Lexer {
         Lexer {
@@ -129,7 +135,8 @@ impl Lexer {
         }
     }
 
-    pub fn add_token(&mut self, token: SmolStr) {
+    pub fn add_token(&mut self, token: impl Into<SmolStr>) {
+        let token = token.into();
         if token.len() > self.longest_token_size {
             self.longest_token_size = token.len();
         }
@@ -268,7 +275,7 @@ impl Lexer {
         let len = chars.len();
         'chars: while i < len {
             // Take new line into account
-            if chars[i] == '\n' as u8 {
+            if chars[i] == b'\n' {
                 line += 1;
                 column = 0;
                 i += 1;

@@ -1,9 +1,9 @@
 use arena::Key;
 
 use crate::{
-    grammar::VariableTag,
+    grammar::{self, NodeTag, VariableTag},
     lexer::{TextLocation, Token},
-    parser,
+    parser, Parser,
 };
 
 // Choose between std and alloc
@@ -27,7 +27,7 @@ impl<'a> parser::Nodes<'a> {
     /// Panics if the type is token
     pub fn name(&'a self) -> &'a str {
         match self {
-            parser::Nodes::Node(node) => &node.name,
+            parser::Nodes::Node(node) => node.name,
             parser::Nodes::Token(tok) => panic!("No name found for token: {:?}", tok.kind),
         }
     }
@@ -38,7 +38,7 @@ impl<'a> parser::Nodes<'a> {
     pub fn token(&'a self) -> &'a Token {
         match self {
             parser::Nodes::Node(node) => panic!("No token found for node: {:?}", node.name),
-            parser::Nodes::Token(tok) => &tok,
+            parser::Nodes::Token(tok) => tok,
         }
     }
 
@@ -73,7 +73,7 @@ impl<'a> parser::Nodes<'a> {
     /// Returns value of variable that is a node
     ///
     /// Panics if the variable is not a node or if it does not exist
-    pub fn try_get_node(&self, variable: &Key<VariableTag>) -> &Option<parser::Nodes> {
+    pub fn try_get_node(&self, variable: &Key<VariableTag>) -> &Option<parser::Nodes<'_>> {
         match self {
             parser::Nodes::Node(node_) => node_.try_get_node(variable),
             parser::Nodes::Token(tok) => panic!("No variables found for token: {:?}", tok.kind),
@@ -83,7 +83,7 @@ impl<'a> parser::Nodes<'a> {
     /// Returns value of variable that is a list of nodes
     ///
     /// Panics if the variable is not a list of nodes or if it does not exist
-    pub fn get_list(&self, variable: &Key<VariableTag>) -> &Vec<parser::Nodes> {
+    pub fn get_list(&self, variable: &Key<VariableTag>) -> &Vec<parser::Nodes<'_>> {
         match self {
             parser::Nodes::Node(node_) => node_.get_list(variable),
             parser::Nodes::Token(tok) => panic!("No variables found for token: {:?}", tok.kind),
@@ -128,7 +128,7 @@ impl<'a> parser::Node<'a> {
     /// Returns value of variable that is a node
     ///
     /// Panics if the variable is not a node or if it does not exist
-    pub fn try_get_node(&self, variable: &Key<VariableTag>) -> &Option<parser::Nodes> {
+    pub fn try_get_node(&self, variable: &Key<VariableTag>) -> &Option<parser::Nodes<'_>> {
         match self.variables.get(variable) {
             Some(node) => match node {
                 parser::VariableKind::Node(ref node) => node,
@@ -141,10 +141,10 @@ impl<'a> parser::Node<'a> {
     /// Returns value of variable that is a list of nodes
     ///
     /// Panics if the variable is not a list of nodes or if it does not exist
-    pub fn get_list(&self, variable: &Key<VariableTag>) -> &Vec<parser::Nodes> {
+    pub fn get_list(&self, variable: &Key<VariableTag>) -> &Vec<parser::Nodes<'_>> {
         match self.variables.get(variable) {
             Some(ref array) => match array {
-                parser::VariableKind::NodeList(array) => &array,
+                parser::VariableKind::NodeList(array) => array,
                 _ => panic!(
                     "Variable <asdgfasdf> is not an array for node: {:?}",
                     self.name
@@ -184,5 +184,16 @@ impl<'a> parser::ParseResult<'a> {
             parser::Nodes::Token(tok) => tok.index + tok.len,
         };
         &text[start_idx..end_idx]
+    }
+}
+
+impl<'a> Parser<'a> {
+    pub fn new_node_recursive(
+        &mut self,
+        cb: impl FnOnce(Key<NodeTag>) -> grammar::Node<'a>,
+    ) -> Key<NodeTag> {
+        let key = unsafe { self.grammar.nodes.empty_alloc() };
+        *self.grammar.nodes.get_mut_unchecked(&key) = cb(key);
+        key
     }
 }
