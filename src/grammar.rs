@@ -328,7 +328,7 @@ pub struct Enumerator<'a> {
 /// > note: Grammar errors have caused me a lot of headache in the past so using this module is highly recommended
 pub mod validator {
 
-    use core::{any::Any, fmt::Display};
+    use core::fmt::Display;
 
     use smol_str::SmolStr;
 
@@ -429,7 +429,7 @@ pub mod validator {
             for rule in &node.rules {
                 self.validate_rule(rule, node, lexer, &mut laf, result);
             }
-            laf.pass(result, &node);
+            laf.pass(result, node);
         }
 
         pub fn validate_rule(
@@ -539,7 +539,7 @@ pub mod validator {
                             VariableKind::Number => (),
                             _ => result.errors.push(ValidationError {
                                 kind: cant_use_err,
-                                node: Some(&node),
+                                node: Some(node),
                             }),
                         };
                         let r = match right {
@@ -556,7 +556,7 @@ pub mod validator {
                             VariableKind::Number => (),
                             _ => result.errors.push(ValidationError {
                                 kind: cant_use_err,
-                                node: Some(&node),
+                                node: Some(node),
                             }),
                         };
                         for rule in rules {
@@ -569,28 +569,28 @@ pub mod validator {
                         laf.lost_labels.push(label);
                     }
                     Commands::Label { name } => {
-                        if laf.found_labels.contains(&name) {
+                        if laf.found_labels.contains(name) {
                             result.errors.push(ValidationError {
-                                kind: ValidationErrors::DuplicateLabel(&name),
-                                node: Some(&node),
+                                kind: ValidationErrors::DuplicateLabel(name),
+                                node: Some(node),
                             });
                         }
-                        laf.found_labels.push(&name);
+                        laf.found_labels.push(name);
                     }
                     Commands::Print { message: _ } => (),
                 },
-                Rule::Debug { target } => (), // match target {
-                                              //     Some(name) => match node.variables.get(&SmolStr::new(name)) {
-                                              //         Some(_) => (),
-                                              //         None => {
-                                              //             result.errors.push(ValidationError {
-                                              //                 kind: ValidationErrors::VariableNotFound(&name),
-                                              //                 node: Some(&node),
-                                              //             });
-                                              //         }
-                                              //     },
-                                              //     None => (),
-                                              // },
+                Rule::Debug { target: _ } => (), // match target {
+                                                 //     Some(name) => match node.variables.get(&SmolStr::new(name)) {
+                                                 //         Some(_) => (),
+                                                 //         None => {
+                                                 //             result.errors.push(ValidationError {
+                                                 //                 kind: ValidationErrors::VariableNotFound(&name),
+                                                 //                 node: Some(&node),
+                                                 //             });
+                                                 //         }
+                                                 //     },
+                                                 //     None => (),
+                                                 // },
             }
         }
 
@@ -619,7 +619,7 @@ pub mod validator {
             result: &mut ValidationResult<'a>,
         ) {
             match token {
-                MatchToken::Node(name) => {
+                MatchToken::Node(_name) => {
                     // if !self.nodes.get(name).is_some() {
                     //     result.errors.push(ValidationError {
                     //         kind: ValidationErrors::NodeNotFound(&name),
@@ -627,7 +627,7 @@ pub mod validator {
                     //     });
                     // }
                 }
-                MatchToken::Enumerator(enumerator) => {
+                MatchToken::Enumerator(_enumerator) => {
                     // if !self.enumerators.contains_key(&SmolStr::new(enumerator)) {
                     //     result.errors.push(ValidationError {
                     //         kind: ValidationErrors::EnumeratorNotFound(&enumerator),
@@ -637,14 +637,14 @@ pub mod validator {
                 }
                 MatchToken::Any => result.warnings.push(ValidationWarning {
                     kind: ValidationWarnings::UsedDepricated(Depricated::Any),
-                    node: Some(&node),
+                    node: Some(node),
                 }),
-                MatchToken::Token(kind) => match kind {
-                    TokenKinds::Token(txt) => {
+                MatchToken::Token(kind) => {
+                    if let TokenKinds::Token(txt) = kind {
                         if txt.is_empty() {
                             result.errors.push(ValidationError {
                                 kind: ValidationErrors::EmptyToken,
-                                node: Some(&node),
+                                node: Some(node),
                             });
                             return;
                         }
@@ -652,12 +652,11 @@ pub mod validator {
                         if !lexer.token_kinds.iter().any(|k| k == txt) {
                             result.errors.push(ValidationError {
                                 kind: ValidationErrors::TokenNotFound(txt.clone()),
-                                node: Some(&node),
+                                node: Some(node),
                             });
                         }
                     }
-                    _ => {}
-                },
+                }
                 _ => {}
             }
         }
@@ -678,7 +677,7 @@ pub mod validator {
                             VariableKind::Boolean | VariableKind::Number => {
                                 result.errors.push(ValidationError {
                                     kind: ValidationErrors::CantUseVariable(*name),
-                                    node: Some(&node),
+                                    node: Some(node),
                                 })
                             }
                         },
@@ -696,7 +695,7 @@ pub mod validator {
                             VariableKind::Boolean | VariableKind::Number => {
                                 result.errors.push(ValidationError {
                                     kind: ValidationErrors::CantUseGlobalVariable(*name),
-                                    node: Some(&node),
+                                    node: Some(node),
                                 })
                             }
                         },
@@ -713,7 +712,7 @@ pub mod validator {
                             VariableKind::Node | VariableKind::NodeList | VariableKind::Boolean => {
                                 result.errors.push(ValidationError {
                                     kind: ValidationErrors::CantUseVariable(*name),
-                                    node: Some(&node),
+                                    node: Some(node),
                                 })
                             }
                         },
@@ -730,7 +729,7 @@ pub mod validator {
                             VariableKind::Node | VariableKind::NodeList | VariableKind::Boolean => {
                                 result.errors.push(ValidationError {
                                     kind: ValidationErrors::CantUseVariable(*name),
-                                    node: Some(&node),
+                                    node: Some(node),
                                 })
                             }
                         },
@@ -747,7 +746,7 @@ pub mod validator {
                             VariableKind::Node | VariableKind::NodeList | VariableKind::Boolean => {
                                 result.errors.push(ValidationError {
                                     kind: ValidationErrors::CantUseGlobalVariable(*name),
-                                    node: Some(&node),
+                                    node: Some(node),
                                 })
                             }
                         },
@@ -764,7 +763,7 @@ pub mod validator {
                             VariableKind::Node | VariableKind::NodeList | VariableKind::Number => {
                                 result.errors.push(ValidationError {
                                     kind: ValidationErrors::CantUseVariable(*name),
-                                    node: Some(&node),
+                                    node: Some(node),
                                 })
                             }
                         },
@@ -781,7 +780,7 @@ pub mod validator {
                             VariableKind::Node | VariableKind::NodeList | VariableKind::Number => {
                                 result.errors.push(ValidationError {
                                     kind: ValidationErrors::CantUseVariable(*name),
-                                    node: Some(&node),
+                                    node: Some(node),
                                 })
                             }
                         },
@@ -798,7 +797,7 @@ pub mod validator {
                             VariableKind::Node | VariableKind::NodeList | VariableKind::Number => {
                                 result.errors.push(ValidationError {
                                     kind: ValidationErrors::CantUseGlobalVariable(*name),
-                                    node: Some(&node),
+                                    node: Some(node),
                                 })
                             }
                         },
@@ -815,7 +814,7 @@ pub mod validator {
                             VariableKind::Node | VariableKind::NodeList | VariableKind::Number => {
                                 result.errors.push(ValidationError {
                                     kind: ValidationErrors::CantUseGlobalVariable(*name),
-                                    node: Some(&node),
+                                    node: Some(node),
                                 })
                             }
                         },
@@ -829,10 +828,10 @@ pub mod validator {
                     Parameters::Print(_) => {
                         result.warnings.push(ValidationWarning {
                             kind: ValidationWarnings::UsedPrint,
-                            node: Some(&node),
+                            node: Some(node),
                         });
                     }
-                    Parameters::Debug(node_option) => {
+                    Parameters::Debug(_node_option) => {
                         // match node_option {
                         //     Some(name) => match node.variables.get(&SmolStr::new(name)) {
                         //         Some(_) => (),
@@ -847,13 +846,13 @@ pub mod validator {
                         // }
                         result.warnings.push(ValidationWarning {
                             kind: ValidationWarnings::UsedDebug,
-                            node: Some(&node),
+                            node: Some(node),
                         });
                     }
                     Parameters::Back(n) => {
                         result.warnings.push(ValidationWarning {
                             kind: ValidationWarnings::UsedDepricated(Depricated::Back),
-                            node: Some(&node),
+                            node: Some(node),
                         });
                         if *n as usize > laf.steps {
                             result.errors.push(ValidationError {
@@ -861,7 +860,7 @@ pub mod validator {
                                     steps: *n as usize,
                                     max: laf.steps,
                                 },
-                                node: Some(&node),
+                                node: Some(node),
                             });
                         }
                     }
@@ -869,7 +868,7 @@ pub mod validator {
                     Parameters::Break(_) => (),
                     Parameters::HardError(_) => (),
                     Parameters::Goto(label) => {
-                        laf.lost_labels.push(&label);
+                        laf.lost_labels.push(label);
                     }
                     Parameters::NodeStart => (),
                     Parameters::NodeEnd => (),

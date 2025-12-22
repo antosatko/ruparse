@@ -1041,9 +1041,9 @@ impl Parser {
             }
             grammar::MatchToken::Node(node_name) => {
                 match self.parse_node(grammar, lexer, node_name, cursor, globals, tokens, text) {
-                    Ok(node) => return Ok(TokenCompare::Is(Nodes::Node(node))),
+                    Ok(node) => Ok(TokenCompare::Is(Nodes::Node(node))),
                     Err((err, node)) => match node.harderror {
-                        true => return Err(err),
+                        true => Err(err),
                         false => Ok(TokenCompare::IsNot(err)),
                     },
                 }
@@ -1096,7 +1096,7 @@ impl Parser {
                     if i >= enumerator.values.len() {
                         return Ok(TokenCompare::IsNot(ParseError {
                             kind: ParseErrors::ExpectedOneOf {
-                                expected: enumerator.values.iter().cloned().collect(),
+                                expected: enumerator.values.to_vec(),
                                 found: tokens[cursor.idx].kind.clone(),
                             },
                             location: tokens[cursor.idx].location.clone(),

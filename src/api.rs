@@ -197,3 +197,172 @@ impl<'a> Parser<'a> {
         key
     }
 }
+
+pub mod ext {
+    use arena::Key;
+    use smol_str::SmolStr;
+
+    use crate::{
+        grammar::{EnumeratorTag, MatchToken, NodeTag, OneOf, Parameters, Rule},
+        lexer::{ControlTokenKind, TokenKinds},
+    };
+
+    pub fn token(tok: impl Into<SmolStr>) -> MatchToken<'static> {
+        MatchToken::Token(TokenKinds::Token(tok.into()))
+    }
+
+    pub fn word<'a>(word: &'a str) -> MatchToken<'a> {
+        MatchToken::Word(word)
+    }
+
+    pub fn text() -> MatchToken<'static> {
+        MatchToken::Token(TokenKinds::Text)
+    }
+
+    pub fn whitespace() -> MatchToken<'static> {
+        MatchToken::Token(TokenKinds::Whitespace)
+    }
+
+    pub fn any() -> MatchToken<'static> {
+        MatchToken::Any
+    }
+
+    pub fn node(node: Key<NodeTag>) -> MatchToken<'static> {
+        MatchToken::Node(node)
+    }
+
+    pub fn enumerator(enumerator: Key<EnumeratorTag>) -> MatchToken<'static> {
+        MatchToken::Enumerator(enumerator)
+    }
+
+    pub fn newline() -> MatchToken<'static> {
+        MatchToken::Token(TokenKinds::Control(ControlTokenKind::Eol))
+    }
+
+    pub fn eof() -> MatchToken<'static> {
+        MatchToken::Token(TokenKinds::Control(ControlTokenKind::Eof))
+    }
+
+    pub fn is<'a>(matches: MatchToken<'a>) -> Rule<'a> {
+        Rule::Is {
+            token: matches,
+            rules: Vec::new(),
+            parameters: Vec::new(),
+        }
+    }
+
+    pub fn isnt<'a>(matches: MatchToken<'a>) -> Rule<'a> {
+        Rule::Isnt {
+            token: matches,
+            rules: Vec::new(),
+            parameters: Vec::new(),
+        }
+    }
+
+    pub fn maybe<'a>(matches: MatchToken<'a>) -> Rule<'a> {
+        Rule::Maybe {
+            token: matches,
+            parameters: Vec::new(),
+            is: Vec::new(),
+            isnt: Vec::new(),
+        }
+    }
+
+    pub fn while_<'a>(matches: MatchToken<'a>) -> Rule<'a> {
+        Rule::While {
+            token: matches,
+            rules: Vec::new(),
+            parameters: Vec::new(),
+        }
+    }
+
+    pub fn loop_<'a>() -> Rule<'a> {
+        Rule::Loop { rules: Vec::new() }
+    }
+
+    pub fn maybe_one_of<'a>(options: Vec<OneOf<'a>>) -> Rule<'a> {
+        Rule::MaybeOneOf {
+            is_one_of: options,
+            isnt: Vec::new(),
+        }
+    }
+
+    pub fn is_one_of<'a>(options: Vec<OneOf<'a>>) -> Rule<'a> {
+        Rule::IsOneOf { tokens: options }
+    }
+
+    pub fn until<'a>(matches: MatchToken<'a>) -> Rule<'a> {
+        Rule::Until {
+            token: matches,
+            rules: Vec::new(),
+            parameters: Vec::new(),
+        }
+    }
+
+    impl<'a> Rule<'a> {
+        pub fn params(mut self, params: impl IntoIterator<Item = Parameters<'a>>) -> Self {
+            match &mut self {
+                Rule::Is { parameters, .. } | Rule::Isnt { parameters, .. } => {
+                    *parameters = params.into_iter().collect()
+                }
+                Rule::Maybe { parameters, .. } => *parameters = params.into_iter().collect(),
+                Rule::While { parameters, .. } | Rule::Until { parameters, .. } => {
+                    *parameters = params.into_iter().collect()
+                }
+                _ => panic!("Can not set params for rule: {:?}", self),
+            }
+            self
+        }
+
+        pub fn then(mut self, set_rules: impl IntoIterator<Item = Rule<'a>>) -> Self {
+            match &mut self {
+                Self::Is { rules, .. } | Self::Isnt { rules, .. } => {
+                    *rules = set_rules.into_iter().collect()
+                }
+                Self::While { rules, .. } | Self::Until { rules, .. } => {
+                    *rules = set_rules.into_iter().collect()
+                }
+                Self::Maybe { is, .. } => *is = set_rules.into_iter().collect(),
+                Self::Loop { rules } => *rules = set_rules.into_iter().collect(),
+                _ => panic!("Can not set 'then' rules for rule: {:?}", self),
+            }
+            self
+        }
+
+        pub fn otherwise(mut self, set_rules: impl IntoIterator<Item = Rule<'a>>) -> Self {
+            match &mut self {
+                Self::Maybe { isnt, .. } => *isnt = set_rules.into_iter().collect(),
+                _ => panic!("Can not set 'otherwise' rulse for rule: {:?}", self),
+            }
+            self
+        }
+    }
+
+    pub fn options<'a>(options: impl IntoIterator<Item = OneOf<'a>>) -> Vec<OneOf<'a>> {
+        options.into_iter().collect()
+    }
+
+    pub fn rules<'a>(rules: impl IntoIterator<Item = Rule<'a>>) -> Vec<Rule<'a>> {
+        rules.into_iter().collect()
+    }
+
+    pub fn option<'a>(matches: MatchToken<'a>) -> OneOf<'a> {
+        OneOf {
+            token: matches,
+            rules: Vec::new(),
+            parameters: Vec::new(),
+        }
+    }
+
+    impl<'a> OneOf<'a> {
+        pub fn then(mut self, set_rules: impl IntoIterator<Item = Rule<'a>>) -> Self {
+            self.rules = set_rules.into_iter().collect();
+            self
+        }
+
+        pub fn params(mut self, params: impl IntoIterator<Item = Parameters<'a>>) -> Self {
+            self.parameters = params.into_iter().collect();
+            self
+        }
+    }
+}
