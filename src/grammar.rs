@@ -1,4 +1,4 @@
-use crate::lexer::TokenKinds;
+use crate::{lexer::TokenKinds, parser, Map};
 
 use arena::{Arena, Key};
 use serde::Deserialize;
@@ -28,7 +28,7 @@ pub struct GlobalVariableTag;
 pub struct Grammar<'a> {
     pub nodes: Arena<Node<'a>, NodeTag>,
     pub enumerators: Arena<Enumerator<'a>, EnumeratorTag>,
-    pub globals: Arena<VariableKind, GlobalVariableTag>,
+    pub globals: Vec<(&'a str, VariableKind)>,
     /// If true, the parser will throw an error if the last token is not EOF
     pub eof: bool,
 }
@@ -44,7 +44,7 @@ impl<'a> Grammar<'a> {
         Grammar {
             nodes: Arena::new(),
             enumerators: Arena::new(),
-            globals: Arena::new(),
+            globals: Vec::new(),
             eof: true,
         }
     }
@@ -166,9 +166,44 @@ pub struct OneOf<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum VarKind {
-    Local(Key<VariableTag>),
-    Global(Key<GlobalVariableTag>),
+pub enum VarKind<'a> {
+    Local(&'a str),
+    Global(&'a str),
+}
+
+impl<'a> VarKind<'a> {
+    pub fn kind(
+        &self,
+        locals: &[(&'a str, VariableKind)],
+        globals: &[(&'a str, VariableKind)],
+    ) -> Option<VariableKind> {
+        match self {
+            VarKind::Local(v) => locals.iter().find(|(id, _)| id == v).map(|(_, v)| *v),
+            VarKind::Global(v) => globals.iter().find(|(id, _)| id == v).map(|(_, v)| *v),
+        }
+    }
+
+    pub fn get(
+        &self,
+        locals: &'a Map<String, parser::VariableKind<'a>>,
+        globals: &'a Map<String, parser::VariableKind<'a>>,
+    ) -> Option<&parser::VariableKind<'a>> {
+        match self {
+            VarKind::Local(v) => locals.get(*v),
+            VarKind::Global(v) => globals.get(*v),
+        }
+    }
+
+    pub fn get_mut<'b>(
+        &'b self,
+        locals: &'b mut Map<String, parser::VariableKind<'a>>,
+        globals: &'b mut Map<String, parser::VariableKind<'a>>,
+    ) -> Option<&'b mut parser::VariableKind<'a>> {
+        match self {
+            VarKind::Local(v) => locals.get_mut(*v),
+            VarKind::Global(v) => globals.get_mut(*v),
+        }
+    }
 }
 
 /// Commands that can be executed
@@ -177,9 +212,9 @@ pub enum Commands<'a> {
     /// Compares two variables/numbers and executes rules if the comparison is true
     Compare {
         /// Left side of the comparison
-        left: VarKind,
+        left: VarKind<'a>,
         /// Right side of the comparison
-        right: VarKind,
+        right: VarKind<'a>,
         /// Comparison operator
         comparison: Comparison,
         /// Rules that will be executed if the comparison is true
@@ -204,7 +239,7 @@ pub enum Commands<'a> {
 }
 
 /// Comparison operators
-#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Copy, Deserialize)]
 pub enum Comparison {
     /// ==
     Equal,
@@ -245,13 +280,13 @@ pub struct Node<'a> {
     /// Rules that will be executed when the node is matched
     pub rules: Rules<'a>,
     /// Variables that can be used in the node and will be accessible from the outside
-    pub variables: Arena<VariableKind, VariableTag>,
+    pub variables: Vec<(&'a str, VariableKind)>,
     /// Documentation for the node
     pub docs: Option<&'a str>,
 }
 
 /// A variable that can be used in a node
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum VariableKind {
     /// Holds a single node
     Node,
@@ -267,27 +302,19 @@ pub enum VariableKind {
 #[derive(Debug, Clone)]
 pub enum Parameters<'a> {
     /// Sets a variable to a value
-    Set(Key<VariableTag>),
-    /// Sets a global variable to a value
-    Global(Key<GlobalVariableTag>),
+    Set(VarKind<'a>),
     /// Adds 1 to a variable of type Count
-    Increment(Key<VariableTag>),
+    Increment(VarKind<'a>),
     /// Subtracts 1 from a variable of type Count
-    Decrement(Key<VariableTag>),
-    /// Adds 1 to a global variable of type Count
-    IncrementGlobal(Key<GlobalVariableTag>),
+    Decrement(VarKind<'a>),
     /// Sets a variable to true
-    True(Key<VariableTag>),
+    True(VarKind<'a>),
     /// Sets a variable to false
-    False(Key<VariableTag>),
-    /// Sets a global variable to true
-    TrueGlobal(Key<GlobalVariableTag>),
-    /// Sets a global variable to false
-    FalseGlobal(Key<GlobalVariableTag>),
+    False(VarKind<'a>),
     /// Prints string
     Print(&'a str),
     /// Prints current token or variable
-    Debug(Option<Key<VariableTag>>),
+    Debug(Option<VarKind<'a>>),
     /// Goes back in rules
     Back(u8),
     /// Returns from node
@@ -520,45 +547,95 @@ pub mod validator {
                     Commands::Compare {
                         left,
                         right,
-                        comparison: _,
+                        comparison: op,
                         rules,
                     } => {
                         use VarKind::*;
-                        let mut cant_use_err;
                         let l = match left {
                             Local(ll) => {
-                                cant_use_err = ValidationErrors::CantUseVariable(*ll);
-                                node.variables.get_unchecked(ll)
+                                match node
+                                    .variables
+                                    .iter()
+                                    .find(|(id, _)| id == ll)
+                                    .map(|(_, kind)| kind)
+                                {
+                                    None => {
+                                        result.errors.push(ValidationError {
+                                            kind: ValidationErrors::VariableNotFound(*left),
+                                            node: Some(node),
+                                        });
+                                        None
+                                    }
+                                    some => some,
+                                }
                             }
                             Global(gl) => {
-                                cant_use_err = ValidationErrors::CantUseGlobalVariable(*gl);
-                                self.globals.get_unchecked(gl)
+                                match self
+                                    .globals
+                                    .iter()
+                                    .find(|(id, _)| id == gl)
+                                    .map(|(_, kind)| kind)
+                                {
+                                    None => {
+                                        result.errors.push(ValidationError {
+                                            kind: ValidationErrors::VariableNotFound(*left),
+                                            node: Some(node),
+                                        });
+                                        None
+                                    }
+                                    some => some,
+                                }
                             }
-                        };
-                        match l {
-                            VariableKind::Number => (),
-                            _ => result.errors.push(ValidationError {
-                                kind: cant_use_err,
-                                node: Some(node),
-                            }),
                         };
                         let r = match right {
                             Local(lr) => {
-                                cant_use_err = ValidationErrors::CantUseVariable(*lr);
-                                node.variables.get_unchecked(lr)
+                                match node
+                                    .variables
+                                    .iter()
+                                    .find(|(id, _)| id == lr)
+                                    .map(|(_, kind)| kind)
+                                {
+                                    None => {
+                                        result.errors.push(ValidationError {
+                                            kind: ValidationErrors::VariableNotFound(*right),
+                                            node: Some(node),
+                                        });
+                                        None
+                                    }
+                                    some => some,
+                                }
                             }
                             Global(gr) => {
-                                cant_use_err = ValidationErrors::CantUseGlobalVariable(*gr);
-                                self.globals.get_unchecked(gr)
+                                match self
+                                    .globals
+                                    .iter()
+                                    .find(|(id, _)| id == gr)
+                                    .map(|(_, kind)| kind)
+                                {
+                                    None => {
+                                        result.errors.push(ValidationError {
+                                            kind: ValidationErrors::VariableNotFound(*right),
+                                            node: Some(node),
+                                        });
+                                        None
+                                    }
+                                    some => some,
+                                }
                             }
                         };
-                        match r {
-                            VariableKind::Number => (),
+                        match (l, r, op) {
+                            (
+                                Some(VariableKind::Boolean),
+                                Some(VariableKind::Boolean),
+                                Comparison::Equal | Comparison::NotEqual,
+                            ) => (),
+                            (Some(VariableKind::Number), Some(VariableKind::Number), _) => (),
+                            (None, None, _) | (None, Some(_), _) | (Some(_), None, _) => (),
                             _ => result.errors.push(ValidationError {
-                                kind: cant_use_err,
+                                kind: ValidationErrors::ComparisonInvalid(*left, *right, *op),
                                 node: Some(node),
                             }),
-                        };
+                        }
                         for rule in rules {
                             self.validate_rule(rule, node, lexer, laf, result);
                         }
@@ -670,7 +747,7 @@ pub mod validator {
         ) {
             for parameter in parameters {
                 match parameter {
-                    Parameters::Set(name) => match node.variables.get(name) {
+                    Parameters::Set(name) => match name.kind(&node.variables, &self.globals) {
                         Some(var) => match var {
                             VariableKind::Node => (),
                             VariableKind::NodeList => (),
@@ -682,82 +759,51 @@ pub mod validator {
                             }
                         },
                         None => {
-                            // result.errors.push(ValidationError {
-                            //     kind: ValidationErrors::VariableNotFound(&name),
-                            //     node: Some(&node),
-                            // });
+                            result.errors.push(ValidationError {
+                                kind: ValidationErrors::VariableNotFound(*name),
+                                node: Some(node),
+                            });
                         }
                     },
-                    Parameters::Global(name) => match self.globals.get(name) {
-                        Some(var) => match var {
-                            VariableKind::Node => (),
-                            VariableKind::NodeList => (),
-                            VariableKind::Boolean | VariableKind::Number => {
-                                result.errors.push(ValidationError {
-                                    kind: ValidationErrors::CantUseGlobalVariable(*name),
-                                    node: Some(node),
-                                })
-                            }
-                        },
-                        None => {
-                            // result.errors.push(ValidationError {
-                            //     kind: ValidationErrors::GlobalNotFound(&name),
-                            //     node: Some(&node),
-                            // });
-                        }
-                    },
-                    Parameters::Increment(name) => match node.variables.get(name) {
-                        Some(var) => match var {
-                            VariableKind::Number => (),
-                            VariableKind::Node | VariableKind::NodeList | VariableKind::Boolean => {
-                                result.errors.push(ValidationError {
+                    Parameters::Increment(name) => {
+                        match name.kind(&node.variables, &self.globals) {
+                            Some(var) => match var {
+                                VariableKind::Number => (),
+                                VariableKind::Node
+                                | VariableKind::NodeList
+                                | VariableKind::Boolean => result.errors.push(ValidationError {
                                     kind: ValidationErrors::CantUseVariable(*name),
                                     node: Some(node),
-                                })
-                            }
-                        },
-                        None => {
-                            // result.errors.push(ValidationError {
-                            //     kind: ValidationErrors::VariableNotFound(name),
-                            //     node: Some(&node),
-                            // });
-                        }
-                    },
-                    Parameters::Decrement(name) => match node.variables.get(name) {
-                        Some(var) => match var {
-                            VariableKind::Number => (),
-                            VariableKind::Node | VariableKind::NodeList | VariableKind::Boolean => {
+                                }),
+                            },
+                            None => {
                                 result.errors.push(ValidationError {
+                                    kind: ValidationErrors::VariableNotFound(*name),
+                                    node: Some(node),
+                                });
+                            }
+                        }
+                    }
+                    Parameters::Decrement(name) => {
+                        match name.kind(&node.variables, &self.globals) {
+                            Some(var) => match var {
+                                VariableKind::Number => (),
+                                VariableKind::Node
+                                | VariableKind::NodeList
+                                | VariableKind::Boolean => result.errors.push(ValidationError {
                                     kind: ValidationErrors::CantUseVariable(*name),
                                     node: Some(node),
-                                })
-                            }
-                        },
-                        None => {
-                            // result.errors.push(ValidationError {
-                            //     kind: ValidationErrors::VariableNotFound(*name),
-                            //     node: Some(&node),
-                            // });
-                        }
-                    },
-                    Parameters::IncrementGlobal(name) => match self.globals.get(name) {
-                        Some(var) => match var {
-                            VariableKind::Number => (),
-                            VariableKind::Node | VariableKind::NodeList | VariableKind::Boolean => {
+                                }),
+                            },
+                            None => {
                                 result.errors.push(ValidationError {
-                                    kind: ValidationErrors::CantUseGlobalVariable(*name),
+                                    kind: ValidationErrors::VariableNotFound(*name),
                                     node: Some(node),
-                                })
+                                });
                             }
-                        },
-                        None => {
-                            // result.errors.push(ValidationError {
-                            //     kind: ValidationErrors::GlobalNotFound(&name),
-                            //     node: Some(&node),
-                            // });
                         }
-                    },
-                    Parameters::True(name) => match node.variables.get(name) {
+                    }
+                    Parameters::True(name) => match name.kind(&node.variables, &self.globals) {
                         Some(var) => match var {
                             VariableKind::Boolean => (),
                             VariableKind::Node | VariableKind::NodeList | VariableKind::Number => {
@@ -768,13 +814,13 @@ pub mod validator {
                             }
                         },
                         None => {
-                            // result.errors.push(ValidationError {
-                            //     kind: ValidationErrors::VariableNotFound(*name),
-                            //     node: Some(&node),
-                            // });
+                            result.errors.push(ValidationError {
+                                kind: ValidationErrors::VariableNotFound(*name),
+                                node: Some(node),
+                            });
                         }
                     },
-                    Parameters::False(name) => match node.variables.get(name) {
+                    Parameters::False(name) => match name.kind(&node.variables, &self.globals) {
                         Some(var) => match var {
                             VariableKind::Boolean => (),
                             VariableKind::Node | VariableKind::NodeList | VariableKind::Number => {
@@ -785,44 +831,10 @@ pub mod validator {
                             }
                         },
                         None => {
-                            // result.errors.push(ValidationError {
-                            //     kind: ValidationErrors::VariableNotFound(&name),
-                            //     node: Some(&node),
-                            // });
-                        }
-                    },
-                    Parameters::TrueGlobal(name) => match self.globals.get(name) {
-                        Some(var) => match var {
-                            VariableKind::Boolean => (),
-                            VariableKind::Node | VariableKind::NodeList | VariableKind::Number => {
-                                result.errors.push(ValidationError {
-                                    kind: ValidationErrors::CantUseGlobalVariable(*name),
-                                    node: Some(node),
-                                })
-                            }
-                        },
-                        None => {
-                            // result.errors.push(ValidationError {
-                            //     kind: ValidationErrors::GlobalNotFound(&name),
-                            //     node: Some(&node),
-                            // });
-                        }
-                    },
-                    Parameters::FalseGlobal(name) => match self.globals.get(name) {
-                        Some(var) => match var {
-                            VariableKind::Boolean => (),
-                            VariableKind::Node | VariableKind::NodeList | VariableKind::Number => {
-                                result.errors.push(ValidationError {
-                                    kind: ValidationErrors::CantUseGlobalVariable(*name),
-                                    node: Some(node),
-                                })
-                            }
-                        },
-                        None => {
-                            // result.errors.push(ValidationError {
-                            //     kind: ValidationErrors::GlobalNotFound(&name),
-                            //     node: Some(&node),
-                            // });
+                            result.errors.push(ValidationError {
+                                kind: ValidationErrors::VariableNotFound(*name),
+                                node: Some(node),
+                            });
                         }
                     },
                     Parameters::Print(_) => {
@@ -831,19 +843,19 @@ pub mod validator {
                             node: Some(node),
                         });
                     }
-                    Parameters::Debug(_node_option) => {
-                        // match node_option {
-                        //     Some(name) => match node.variables.get(&SmolStr::new(name)) {
-                        //         Some(_) => (),
-                        //         None => {
-                        //             result.errors.push(ValidationError {
-                        //                 kind: ValidationErrors::VariableNotFound(&name),
-                        //                 node: Some(&node),
-                        //             });
-                        //         }
-                        //     },
-                        //     None => (),
-                        // }
+                    Parameters::Debug(name) => {
+                        match name {
+                            Some(name) => match name.kind(&node.variables, &self.globals) {
+                                Some(_) => (),
+                                None => {
+                                    result.errors.push(ValidationError {
+                                        kind: ValidationErrors::VariableNotFound(*name),
+                                        node: Some(&node),
+                                    });
+                                }
+                            },
+                            None => (),
+                        }
                         result.warnings.push(ValidationWarning {
                             kind: ValidationWarnings::UsedDebug,
                             node: Some(node),
@@ -939,8 +951,9 @@ pub mod validator {
 
     #[derive(Debug, Clone)]
     pub enum ValidationErrors<'a> {
-        CantUseVariable(Key<VariableTag>),
-        CantUseGlobalVariable(Key<GlobalVariableTag>),
+        CantUseVariable(VarKind<'a>),
+        ComparisonInvalid(VarKind<'a>, VarKind<'a>, Comparison),
+        VariableNotFound(VarKind<'a>),
         EmptyToken,
         TokenNotFound(SmolStr),
         DuplicateLabel(&'a str),
@@ -1074,9 +1087,6 @@ pub mod validator {
                 ValidationErrors::CantUseVariable(key) => {
                     write!(f, "Can not use variable {key:?} in that way")
                 }
-                ValidationErrors::CantUseGlobalVariable(key) => {
-                    write!(f, "Can not use global variable {key:?} in that way")
-                }
                 ValidationErrors::EmptyToken => write!(f, "Empty tokens are not allowed"),
                 ValidationErrors::TokenNotFound(smol_str) => {
                     write!(f, "Token ({smol_str}) not found in lexer")
@@ -1092,6 +1102,12 @@ pub mod validator {
                 }
                 ValidationErrors::CannotGoBackMoreThan { steps, max } => {
                     write!(f, "Can not go back {steps} times, maximum: {max}")
+                }
+                ValidationErrors::ComparisonInvalid(l, r, comparison) => {
+                    write!(f, "Invalid comparison {comparison:?} on {l:?}, {r:?}")
+                }
+                ValidationErrors::VariableNotFound(var_kind) => {
+                    write!(f, "Variable {var_kind:?} not found")
                 }
             }
         }

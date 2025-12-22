@@ -66,7 +66,7 @@ mod tests {
     use arena::Arena;
 
     use crate::{
-        api::ext::{enumerator, node, text, token, word},
+        api::ext::{enumerator, local, node, text, token, word},
         lexer::TokenKinds,
     };
 
@@ -128,7 +128,7 @@ mod tests {
         use crate::api::ext;
 
         let mut parser = Parser::new();
-        let txt = "let   danda=  1+60;";
+        let txt = "let   danda:hhh=  1+60;";
         parser.lexer.add_token("=");
         parser.lexer.add_token(":");
         parser.lexer.add_token("+");
@@ -143,35 +143,33 @@ mod tests {
             name: "operators",
             values: [token("+"), token("-"), token("*"), token("/")].to_vec(),
         });
-        let mut variables = Arena::new();
-        let value_nodes = variables.push(VariableKind::NodeList);
         let value = parser.grammar.add_node(grammar::Node {
             name: "value",
             rules: ext::rules([
-                ext::is(text()).params([Parameters::Set(value_nodes)]),
+                ext::is(text()).set(local("nodes")),
                 ext::while_(enumerator(operators))
-                    .params([Parameters::Set(value_nodes)])
-                    .then([ext::is(text()).params([Parameters::Set(value_nodes)])]),
+                    .set(local("nodes"))
+                    .then([ext::is(text()).set(local("nodes"))]),
             ]),
-            variables: variables.clone(),
+            variables: [("nodes", VariableKind::NodeList)].to_vec(),
             docs: None,
         });
 
-        let mut variables = Arena::new();
-        let let_ident = variables.push(VariableKind::Node);
-        let let_type_ = variables.push(VariableKind::Node);
-        let let_value = variables.push(VariableKind::Node);
         let kw_let = parser.grammar.add_node(grammar::Node {
             name: "KWLet",
             rules: ext::rules([
-                ext::is(word("let")).params([Parameters::HardError(true)]),
-                ext::is(text()).params([Parameters::Set(let_ident)]),
-                ext::maybe(token(":")).then([ext::is(text()).params([Parameters::Set(let_type_)])]),
-                ext::maybe(token("="))
-                    .then([ext::is(node(value)).params([Parameters::Set(let_value)])]),
+                ext::is(word("let")).hard_err(),
+                ext::is(text()).set(local("ident")),
+                ext::maybe(token(":")).then([ext::is(text()).set(local("type"))]),
+                ext::maybe(token("=")).then([ext::is(node(value)).set(local("value"))]),
                 ext::maybe(token(";")),
             ]),
-            variables: variables.clone(),
+            variables: [
+                ("ident", VariableKind::Node),
+                ("type", VariableKind::Node),
+                ("value", VariableKind::Node),
+            ]
+            .to_vec(),
             docs: Some("let <ident>[: <type>] [= <value>];"),
         });
         parser.parser.entry = Some(kw_let);
@@ -193,12 +191,26 @@ mod tests {
                 let ident = parser.lexer.stringify(
                     entry
                         .variables
-                        .get_unchecked(&let_ident)
+                        .get("ident")
+                        .unwrap()
                         .unwrap_node()
                         .unwrap_token(),
                     txt,
                 );
-                println!("result: let {ident}");
+                print!("result: let {ident}");
+                let let_type = parser.lexer.stringify(
+                    entry
+                        .variables
+                        .get("type")
+                        .unwrap()
+                        .unwrap_node() // panics if no type
+                        .unwrap_token(),
+                    txt,
+                );
+                print!(": {let_type}");
+                print!(";");
+
+                panic!()
             }
             Err(e) => {
                 panic!("{e}");

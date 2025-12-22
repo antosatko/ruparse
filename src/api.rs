@@ -53,7 +53,7 @@ impl<'a> parser::Nodes<'a> {
     /// Returns value of variable that is a number
     ///
     /// Panics if the variable is not a number or if it does not exist
-    pub fn get_number(&self, variable: &Key<VariableTag>) -> i32 {
+    pub fn get_number(&self, variable: &str) -> i32 {
         match self {
             parser::Nodes::Node(node) => node.get_number(variable),
             parser::Nodes::Token(tok) => panic!("No variables found for token: {:?}", tok.kind),
@@ -63,7 +63,7 @@ impl<'a> parser::Nodes<'a> {
     /// Returns value of variable that is a bool
     ///
     /// Panics if the variable is not a bool or if it does not exist
-    pub fn get_bool(&self, variable: &Key<VariableTag>) -> bool {
+    pub fn get_bool(&self, variable: &str) -> bool {
         match self {
             parser::Nodes::Node(node) => node.get_bool(variable),
             parser::Nodes::Token(tok) => panic!("No variables found for token: {:?}", tok.kind),
@@ -73,7 +73,7 @@ impl<'a> parser::Nodes<'a> {
     /// Returns value of variable that is a node
     ///
     /// Panics if the variable is not a node or if it does not exist
-    pub fn try_get_node(&self, variable: &Key<VariableTag>) -> &Option<parser::Nodes<'_>> {
+    pub fn try_get_node(&self, variable: &str) -> &Option<parser::Nodes<'_>> {
         match self {
             parser::Nodes::Node(node_) => node_.try_get_node(variable),
             parser::Nodes::Token(tok) => panic!("No variables found for token: {:?}", tok.kind),
@@ -83,7 +83,7 @@ impl<'a> parser::Nodes<'a> {
     /// Returns value of variable that is a list of nodes
     ///
     /// Panics if the variable is not a list of nodes or if it does not exist
-    pub fn get_list(&self, variable: &Key<VariableTag>) -> &Vec<parser::Nodes<'_>> {
+    pub fn get_list(&self, variable: &str) -> &Vec<parser::Nodes<'_>> {
         match self {
             parser::Nodes::Node(node_) => node_.get_list(variable),
             parser::Nodes::Token(tok) => panic!("No variables found for token: {:?}", tok.kind),
@@ -102,7 +102,7 @@ impl<'a> parser::Node<'a> {
     /// Returns value of variable that is a number
     ///
     /// Panics if the variable is not a number or if it does not exist
-    pub fn get_number(&self, variable: &Key<VariableTag>) -> i32 {
+    pub fn get_number(&self, variable: &str) -> i32 {
         match self.variables.get(variable) {
             Some(num) => match num {
                 &parser::VariableKind::Number(num) => num,
@@ -115,7 +115,7 @@ impl<'a> parser::Node<'a> {
     /// Returns value of variable that is a bool
     ///
     /// Panics if the variable is not a bool or if it does not exist
-    pub fn get_bool(&self, variable: &Key<VariableTag>) -> bool {
+    pub fn get_bool(&self, variable: &str) -> bool {
         match self.variables.get(variable) {
             Some(bool) => match bool {
                 &parser::VariableKind::Boolean(bool) => bool,
@@ -128,7 +128,7 @@ impl<'a> parser::Node<'a> {
     /// Returns value of variable that is a node
     ///
     /// Panics if the variable is not a node or if it does not exist
-    pub fn try_get_node(&self, variable: &Key<VariableTag>) -> &Option<parser::Nodes<'_>> {
+    pub fn try_get_node(&self, variable: &str) -> &Option<parser::Nodes<'_>> {
         match self.variables.get(variable) {
             Some(node) => match node {
                 parser::VariableKind::Node(ref node) => node,
@@ -141,7 +141,7 @@ impl<'a> parser::Node<'a> {
     /// Returns value of variable that is a list of nodes
     ///
     /// Panics if the variable is not a list of nodes or if it does not exist
-    pub fn get_list(&self, variable: &Key<VariableTag>) -> &Vec<parser::Nodes<'_>> {
+    pub fn get_list(&self, variable: &str) -> &Vec<parser::Nodes<'_>> {
         match self.variables.get(variable) {
             Some(ref array) => match array {
                 parser::VariableKind::NodeList(array) => array,
@@ -199,11 +199,16 @@ impl<'a> Parser<'a> {
 }
 
 pub mod ext {
+    use std::process::Command;
+
     use arena::Key;
     use smol_str::SmolStr;
 
     use crate::{
-        grammar::{EnumeratorTag, MatchToken, NodeTag, OneOf, Parameters, Rule},
+        grammar::{
+            Commands, Comparison, EnumeratorTag, GlobalVariableTag, MatchToken, NodeTag, OneOf,
+            Parameters, Rule, VarKind, VariableKind, VariableTag,
+        },
         lexer::{ControlTokenKind, TokenKinds},
     };
 
@@ -299,15 +304,50 @@ pub mod ext {
         }
     }
 
+    pub fn compare<'a>(a: VarKind<'a>, b: VarKind<'a>, comp: Comparison) -> Rule<'a> {
+        Rule::Command {
+            command: Commands::Compare {
+                left: a,
+                right: b,
+                comparison: comp,
+                rules: Vec::new(),
+            },
+        }
+    }
+
+    pub fn print_msg<'a>(msg: &'a str) -> Rule<'a> {
+        Rule::Command {
+            command: Commands::Print { message: msg },
+        }
+    }
+
+    pub fn hard_err() -> Rule<'static> {
+        Rule::Command {
+            command: Commands::HardError { set: true },
+        }
+    }
+
+    pub fn label<'a>(identifier: &'a str) -> Rule<'a> {
+        Rule::Command {
+            command: Commands::Label { name: identifier },
+        }
+    }
+
+    pub fn goto<'a>(identifier: &'a str) -> Rule<'a> {
+        Rule::Command {
+            command: Commands::Goto { label: identifier },
+        }
+    }
+
     impl<'a> Rule<'a> {
         pub fn params(mut self, params: impl IntoIterator<Item = Parameters<'a>>) -> Self {
             match &mut self {
                 Rule::Is { parameters, .. } | Rule::Isnt { parameters, .. } => {
-                    *parameters = params.into_iter().collect()
+                    parameters.extend(params);
                 }
-                Rule::Maybe { parameters, .. } => *parameters = params.into_iter().collect(),
+                Rule::Maybe { parameters, .. } => parameters.extend(params),
                 Rule::While { parameters, .. } | Rule::Until { parameters, .. } => {
-                    *parameters = params.into_iter().collect()
+                    parameters.extend(params);
                 }
                 _ => panic!("Can not set params for rule: {:?}", self),
             }
@@ -316,14 +356,13 @@ pub mod ext {
 
         pub fn then(mut self, set_rules: impl IntoIterator<Item = Rule<'a>>) -> Self {
             match &mut self {
-                Self::Is { rules, .. } | Self::Isnt { rules, .. } => {
-                    *rules = set_rules.into_iter().collect()
-                }
-                Self::While { rules, .. } | Self::Until { rules, .. } => {
-                    *rules = set_rules.into_iter().collect()
-                }
-                Self::Maybe { is, .. } => *is = set_rules.into_iter().collect(),
-                Self::Loop { rules } => *rules = set_rules.into_iter().collect(),
+                Self::Is { rules, .. } | Self::Isnt { rules, .. } => rules.extend(set_rules),
+                Self::While { rules, .. } | Self::Until { rules, .. } => rules.extend(set_rules),
+                Self::Maybe { is, .. } => is.extend(set_rules),
+                Self::Loop { rules } => rules.extend(set_rules),
+                Self::Command {
+                    command: Commands::Compare { rules, .. },
+                } => rules.extend(set_rules),
                 _ => panic!("Can not set 'then' rules for rule: {:?}", self),
             }
             self
@@ -331,11 +370,43 @@ pub mod ext {
 
         pub fn otherwise(mut self, set_rules: impl IntoIterator<Item = Rule<'a>>) -> Self {
             match &mut self {
-                Self::Maybe { isnt, .. } => *isnt = set_rules.into_iter().collect(),
+                Self::Maybe { isnt, .. } => isnt.extend(set_rules),
                 _ => panic!("Can not set 'otherwise' rulse for rule: {:?}", self),
             }
             self
         }
+
+        pub fn set(self, var: VarKind<'a>) -> Self {
+            self.params([Parameters::Set(var)])
+        }
+
+        pub fn hard_err(self) -> Self {
+            self.params([Parameters::HardError(true)])
+        }
+
+        pub fn print(self, txt: &'a str) -> Self {
+            self.params([Parameters::Print(txt)])
+        }
+
+        pub fn start(self) -> Self {
+            self.params([Parameters::NodeStart])
+        }
+
+        pub fn end(self) -> Self {
+            self.params([Parameters::NodeEnd])
+        }
+
+        pub fn return_node(self) -> Self {
+            self.params([Parameters::Return])
+        }
+    }
+
+    pub fn local<'a>(name: &'a str) -> VarKind<'a> {
+        VarKind::Local(name)
+    }
+
+    pub fn global<'a>(name: &'a str) -> VarKind<'a> {
+        VarKind::Global(name)
     }
 
     pub fn options<'a>(options: impl IntoIterator<Item = OneOf<'a>>) -> Vec<OneOf<'a>> {

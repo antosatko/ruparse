@@ -116,7 +116,7 @@ impl Parser {
         lexer: &Lexer,
         name: &Key<NodeTag>,
         cursor: &mut Cursor,
-        globals: &mut Arena<VariableKind<'a>, GlobalVariableTag>,
+        globals: &mut Map<String, VariableKind<'a>>,
         tokens: &Vec<Token>,
         text: &'a str,
     ) -> Result<Node<'a>, (ParseError<'a>, Node<'a>)> {
@@ -210,7 +210,7 @@ impl Parser {
         lexer: &Lexer,
         rules: &'a Vec<grammar::Rule<'a>>,
         cursor: &mut Cursor,
-        globals: &mut Arena<VariableKind<'a>, GlobalVariableTag>,
+        globals: &mut Map<String, VariableKind<'a>>,
         cursor_clone: &Cursor,
         node: &mut Node<'a>,
         tokens: &Vec<Token>,
@@ -678,35 +678,9 @@ impl Parser {
                         comparison,
                         rules,
                     } => {
-                        use VarKind::*;
-                        let left_opt = match left {
-                            Local(l) => node.variables.get(l),
-                            Global(g) => globals.get(g),
-                        };
-                        let left = match left_opt {
-                            None => {
-                                return Err(ParseError {
-                                    kind: ParseErrors::VariableNotFound(*left),
-                                    location: tokens[cursor.idx].location.clone(),
-                                    node: Some(node.clone()),
-                                })
-                            }
-                            Some(v) => v,
-                        };
-                        let right_opt = match right {
-                            Local(l) => node.variables.get(l),
-                            Global(g) => globals.get(g),
-                        };
-                        let right = match right_opt {
-                            None => {
-                                return Err(ParseError {
-                                    kind: ParseErrors::VariableNotFound(*right),
-                                    location: tokens[cursor.idx].location.clone(),
-                                    node: Some(node.clone()),
-                                })
-                            }
-                            Some(v) => v,
-                        };
+                        let left = left.get(&node.variables, globals).unwrap();
+                        let right = right.get(&node.variables, globals).unwrap();
+
                         let comparisons = match left {
                             VariableKind::Node(node_left) => {
                                 if let VariableKind::Node(node_right) = right {
@@ -995,7 +969,7 @@ impl Parser {
         lexer: &Lexer,
         token: &grammar::MatchToken,
         cursor: &mut Cursor,
-        globals: &mut Arena<VariableKind<'a>, GlobalVariableTag>,
+        globals: &mut Map<String, VariableKind<'a>>,
         cursor_clone: &Cursor,
         tokens: &Vec<Token>,
         text: &'a str,
@@ -1140,9 +1114,9 @@ impl Parser {
     fn parse_parameters<'a>(
         &'a self,
         lexer: &Lexer,
-        parameters: &Vec<grammar::Parameters>,
+        parameters: &'a Vec<grammar::Parameters>,
         cursor: &mut Cursor,
-        globals: &mut Arena<VariableKind<'a>, GlobalVariableTag>,
+        globals: &mut Map<String, VariableKind<'a>>,
         node: &mut Node<'a>,
         value: &Nodes<'a>,
         bus: &mut MsgBus,
@@ -1152,16 +1126,9 @@ impl Parser {
         for parameter in parameters {
             match parameter {
                 grammar::Parameters::Set(name) => {
-                    let kind = match node.variables.get_mut(name) {
-                        Some(kind) => kind,
-                        None => {
-                            return Err(ParseError {
-                                kind: ParseErrors::VariableNotFound(VarKind::Local(*name)),
-                                location: tokens[cursor.idx].location.clone(),
-                                node: None,
-                            })
-                        }
-                    };
+                    let kind = name
+                        .get_mut(&mut node.variables, globals)
+                        .expect("Variable exists not :(");
                     match kind {
                         VariableKind::Node(ref mut single) => {
                             *single = Some(value.clone());
@@ -1170,18 +1137,12 @@ impl Parser {
                             list.push(value.clone());
                         }
                         VariableKind::Boolean(_) => Err(ParseError {
-                            kind: ParseErrors::CannotSetVariable(
-                                VarKind::Local(*name),
-                                kind.clone(),
-                            ),
+                            kind: ParseErrors::CannotSetVariable(*name, kind.clone()),
                             location: tokens[cursor.idx].location.clone(),
                             node: None,
                         })?,
                         VariableKind::Number(_) => Err(ParseError {
-                            kind: ParseErrors::CannotSetVariable(
-                                VarKind::Local(*name),
-                                kind.clone(),
-                            ),
+                            kind: ParseErrors::CannotSetVariable(*name, kind.clone()),
                             location: tokens[cursor.idx].location.clone(),
                             node: None,
                         })?,
@@ -1195,18 +1156,7 @@ impl Parser {
                     Some(_ident) => {
                         #[cfg(feature = "std")]
                         {
-                            let kind = match node.variables.get(_ident) {
-                                Some(kind) => kind,
-                                None => {
-                                    return Err(ParseError {
-                                        kind: ParseErrors::VariableNotFound(VarKind::Local(
-                                            *_ident,
-                                        )),
-                                        location: tokens[cursor.idx].location.clone(),
-                                        node: None,
-                                    })
-                                }
-                            };
+                            let kind = _ident.get(&node.variables, globals);
                             println!("{:?}", kind);
                         }
                     }
@@ -1221,35 +1171,20 @@ impl Parser {
                     }
                 },
                 grammar::Parameters::Increment(ident) => {
-                    let kind = match node.variables.get_mut(ident) {
-                        Some(kind) => kind,
-                        None => {
-                            return Err(ParseError {
-                                kind: ParseErrors::VariableNotFound(VarKind::Local(*ident)),
-                                location: tokens[cursor.idx].location.clone(),
-                                node: None,
-                            })
-                        }
-                    };
+                    let kind = ident.get_mut(&mut node.variables, globals).unwrap();
                     match kind {
                         VariableKind::Node(_) => Err(ParseError {
-                            kind: ParseErrors::VariableNotFound(VarKind::Local(*ident)),
+                            kind: ParseErrors::VariableNotFound(*ident),
                             location: tokens[cursor.idx].location.clone(),
                             node: None,
                         })?,
                         VariableKind::NodeList(_) => Err(ParseError {
-                            kind: ParseErrors::UncountableVariable(
-                                VarKind::Local(*ident),
-                                kind.clone(),
-                            ),
+                            kind: ParseErrors::UncountableVariable(*ident, kind.clone()),
                             location: tokens[cursor.idx].location.clone(),
                             node: None,
                         })?,
                         VariableKind::Boolean(_) => Err(ParseError {
-                            kind: ParseErrors::UncountableVariable(
-                                VarKind::Local(*ident),
-                                kind.clone(),
-                            ),
+                            kind: ParseErrors::UncountableVariable(*ident, kind.clone()),
                             location: tokens[cursor.idx].location.clone(),
                             node: None,
                         })?,
@@ -1259,38 +1194,20 @@ impl Parser {
                     };
                 }
                 grammar::Parameters::Decrement(ident) => {
-                    let kind = match node.variables.get_mut(ident) {
-                        Some(kind) => kind,
-                        None => {
-                            return Err(ParseError {
-                                kind: ParseErrors::VariableNotFound(VarKind::Local(*ident)),
-                                location: tokens[cursor.idx].location.clone(),
-                                node: None,
-                            })
-                        }
-                    };
+                    let kind = ident.get_mut(&mut node.variables, globals).unwrap();
                     match kind {
                         VariableKind::Node(_) => Err(ParseError {
-                            kind: ParseErrors::UncountableVariable(
-                                VarKind::Local(*ident),
-                                kind.clone(),
-                            ),
+                            kind: ParseErrors::UncountableVariable(*ident, kind.clone()),
                             location: tokens[cursor.idx].location.clone(),
                             node: None,
                         })?,
                         VariableKind::NodeList(_) => Err(ParseError {
-                            kind: ParseErrors::UncountableVariable(
-                                VarKind::Local(*ident),
-                                kind.clone(),
-                            ),
+                            kind: ParseErrors::UncountableVariable(*ident, kind.clone()),
                             location: tokens[cursor.idx].location.clone(),
                             node: None,
                         })?,
                         VariableKind::Boolean(_) => Err(ParseError {
-                            kind: ParseErrors::UncountableVariable(
-                                VarKind::Local(*ident),
-                                kind.clone(),
-                            ),
+                            kind: ParseErrors::UncountableVariable(*ident, kind.clone()),
                             location: tokens[cursor.idx].location.clone(),
                             node: None,
                         })?,
@@ -1300,173 +1217,24 @@ impl Parser {
                     };
                 }
                 grammar::Parameters::True(variable) => {
-                    let kind = match node.variables.get_mut(variable) {
-                        Some(kind) => kind,
-                        None => {
-                            return Err(ParseError {
-                                kind: ParseErrors::VariableNotFound(VarKind::Local(*variable)),
-                                location: tokens[cursor.idx].location.clone(),
-                                node: None,
-                            })
-                        }
-                    };
+                    let kind = variable.get_mut(&mut node.variables, globals).unwrap();
                     if let VariableKind::Boolean(ref mut val) = kind {
                         *val = true;
                     } else {
                         return Err(ParseError {
-                            kind: ParseErrors::UncountableVariable(
-                                VarKind::Local(*variable),
-                                kind.clone(),
-                            ),
+                            kind: ParseErrors::UncountableVariable(*variable, kind.clone()),
                             location: tokens[cursor.idx].location.clone(),
                             node: None,
                         });
                     }
                 }
                 grammar::Parameters::False(variable) => {
-                    let kind = match node.variables.get_mut(variable) {
-                        Some(kind) => kind,
-                        None => {
-                            return Err(ParseError {
-                                kind: ParseErrors::VariableNotFound(VarKind::Local(*variable)),
-                                location: tokens[cursor.idx].location.clone(),
-                                node: None,
-                            })
-                        }
-                    };
+                    let kind = variable.get_mut(&mut node.variables, globals).unwrap();
                     if let VariableKind::Boolean(ref mut val) = kind {
                         *val = false;
                     } else {
                         return Err(ParseError {
-                            kind: ParseErrors::UncountableVariable(
-                                VarKind::Local(*variable),
-                                kind.clone(),
-                            ),
-                            location: tokens[cursor.idx].location.clone(),
-                            node: None,
-                        });
-                    }
-                }
-                grammar::Parameters::Global(variable) => {
-                    let kind = match globals.get_mut(variable) {
-                        Some(kind) => kind,
-                        None => {
-                            return Err(ParseError {
-                                kind: ParseErrors::VariableNotFound(VarKind::Global(*variable)),
-                                location: tokens[cursor.idx].location.clone(),
-                                node: None,
-                            })
-                        }
-                    };
-                    match kind {
-                        VariableKind::Node(single) => {
-                            *single = Some(value.clone());
-                        }
-                        VariableKind::NodeList(list) => {
-                            list.push(value.clone());
-                        }
-                        VariableKind::Boolean(_) => Err(ParseError {
-                            kind: ParseErrors::CannotSetVariable(
-                                VarKind::Global(*variable),
-                                kind.clone(),
-                            ),
-                            location: tokens[cursor.idx].location.clone(),
-                            node: None,
-                        })?,
-                        VariableKind::Number(_) => Err(ParseError {
-                            kind: ParseErrors::CannotSetVariable(
-                                VarKind::Global(*variable),
-                                kind.clone(),
-                            ),
-                            location: tokens[cursor.idx].location.clone(),
-                            node: None,
-                        })?,
-                    };
-                }
-                grammar::Parameters::IncrementGlobal(variable) => {
-                    let kind = match globals.get_mut(variable) {
-                        Some(kind) => kind,
-                        None => {
-                            return Err(ParseError {
-                                kind: ParseErrors::VariableNotFound(VarKind::Global(*variable)),
-                                location: tokens[cursor.idx].location.clone(),
-                                node: None,
-                            })
-                        }
-                    };
-                    match kind {
-                        VariableKind::Node(_) => Err(ParseError {
-                            kind: ParseErrors::UncountableVariable(
-                                VarKind::Global(*variable),
-                                kind.clone(),
-                            ),
-                            location: tokens[cursor.idx].location.clone(),
-                            node: None,
-                        })?,
-                        VariableKind::NodeList(_) => Err(ParseError {
-                            kind: ParseErrors::UncountableVariable(
-                                VarKind::Global(*variable),
-                                kind.clone(),
-                            ),
-                            location: tokens[cursor.idx].location.clone(),
-                            node: None,
-                        })?,
-                        VariableKind::Boolean(_) => Err(ParseError {
-                            kind: ParseErrors::UncountableVariable(
-                                VarKind::Global(*variable),
-                                kind.clone(),
-                            ),
-                            location: tokens[cursor.idx].location.clone(),
-                            node: None,
-                        })?,
-                        VariableKind::Number(val) => {
-                            *val += 1;
-                        }
-                    };
-                }
-                grammar::Parameters::TrueGlobal(variable) => {
-                    let kind = match globals.get_mut(variable) {
-                        Some(kind) => kind,
-                        None => {
-                            return Err(ParseError {
-                                kind: ParseErrors::VariableNotFound(VarKind::Global(*variable)),
-                                location: tokens[cursor.idx].location.clone(),
-                                node: None,
-                            })
-                        }
-                    };
-                    if let VariableKind::Boolean(val) = kind {
-                        *val = true;
-                    } else {
-                        return Err(ParseError {
-                            kind: ParseErrors::UncountableVariable(
-                                VarKind::Global(*variable),
-                                kind.clone(),
-                            ),
-                            location: tokens[cursor.idx].location.clone(),
-                            node: None,
-                        });
-                    }
-                }
-                grammar::Parameters::FalseGlobal(variable) => {
-                    let kind = match globals.get_mut(variable) {
-                        Some(kind) => kind,
-                        None => {
-                            return Err(ParseError {
-                                kind: ParseErrors::VariableNotFound(VarKind::Global(*variable)),
-                                location: tokens[cursor.idx].location.clone(),
-                                node: None,
-                            })
-                        }
-                    };
-                    if let VariableKind::Boolean(val) = kind {
-                        *val = false;
-                    } else {
-                        return Err(ParseError {
-                            kind: ParseErrors::UncountableVariable(
-                                VarKind::Global(*variable),
-                                kind.clone(),
-                            ),
+                            kind: ParseErrors::UncountableVariable(*variable, kind.clone()),
                             location: tokens[cursor.idx].location.clone(),
                             node: None,
                         });
@@ -1507,7 +1275,7 @@ enum TokenCompare<'a> {
 #[derive(Debug)]
 pub struct ParseResult<'a> {
     pub entry: Node<'a>,
-    pub globals: Arena<VariableKind<'a>, GlobalVariableTag>,
+    pub globals: Map<String, VariableKind<'a>>,
 }
 
 pub mod map_tools {
@@ -1624,7 +1392,7 @@ impl<'a> Nodes<'a> {
 #[derive(Debug, Clone)]
 pub struct Node<'a> {
     pub name: &'a str,
-    pub variables: Arena<VariableKind<'a>, VariableTag>,
+    pub variables: Map<String, VariableKind<'a>>,
     pub(crate) first_string_idx: usize,
     pub(crate) last_string_idx: usize,
     pub(crate) harderror: bool,
@@ -1636,7 +1404,7 @@ impl<'a> Node<'a> {
     pub fn new(name: &'a str) -> Node<'a> {
         Node {
             name,
-            variables: Arena::new(),
+            variables: Map::new(),
             first_string_idx: 0,
             last_string_idx: 0,
             harderror: false,
@@ -1665,18 +1433,18 @@ impl<'a> Node<'a> {
         Ok(node)
     }
 
-    pub fn variables_from_grammar<Tag>(
-        variables: &Arena<grammar::VariableKind, Tag>,
-    ) -> Result<Arena<VariableKind<'_>, Tag>, ParseError<'_>> {
-        let mut result = Arena::new();
+    pub fn variables_from_grammar(
+        variables: &[(&'a str, grammar::VariableKind)],
+    ) -> Result<Map<String, VariableKind<'a>>, ParseError<'a>> {
+        let mut result = Map::new();
         for value in variables.iter() {
-            let var = match value {
+            let var = match value.1 {
                 crate::grammar::VariableKind::Node => VariableKind::Node(None),
                 crate::grammar::VariableKind::NodeList => VariableKind::NodeList(Vec::new()),
                 crate::grammar::VariableKind::Boolean => VariableKind::Boolean(false),
                 crate::grammar::VariableKind::Number => VariableKind::Number(0),
             };
-            result.push(var);
+            result.insert(value.0.to_string(), var);
         }
         Ok(result)
     }
@@ -1823,11 +1591,11 @@ pub enum ParseErrors<'a> {
     /// Expected to not be
     ExpectedToNotBe(TokenKinds),
     /// Variable not found - Developer error
-    VariableNotFound(VarKind),
+    VariableNotFound(VarKind<'a>),
     /// Uncountable variable - Developer error
-    UncountableVariable(VarKind, VariableKind<'a>),
+    UncountableVariable(VarKind<'a>, VariableKind<'a>),
     /// Cannot set variable - Developer error
-    CannotSetVariable(VarKind, VariableKind<'a>),
+    CannotSetVariable(VarKind<'a>, VariableKind<'a>),
     /// Custom error message
     Message(&'a str),
     /// Unexpected end of file
