@@ -629,6 +629,11 @@ pub mod validator {
                                 Some(VariableKind::Boolean),
                                 Comparison::Equal | Comparison::NotEqual,
                             ) => (),
+                            (
+                                Some(VariableKind::Node),
+                                Some(VariableKind::Node),
+                                Comparison::Equal | Comparison::NotEqual,
+                            ) => (),
                             (Some(VariableKind::Number), Some(VariableKind::Number), _) => (),
                             (None, None, _) | (None, Some(_), _) | (Some(_), None, _) => (),
                             _ => result.errors.push(ValidationError {
@@ -844,17 +849,16 @@ pub mod validator {
                         });
                     }
                     Parameters::Debug(name) => {
-                        match name {
-                            Some(name) => match name.kind(&node.variables, &self.globals) {
+                        if let Some(name) = name {
+                            match name.kind(&node.variables, &self.globals) {
                                 Some(_) => (),
                                 None => {
                                     result.errors.push(ValidationError {
                                         kind: ValidationErrors::VariableNotFound(*name),
-                                        node: Some(&node),
+                                        node: Some(node),
                                     });
                                 }
-                            },
-                            None => (),
+                            }
                         }
                         result.warnings.push(ValidationWarning {
                             kind: ValidationWarnings::UsedDebug,

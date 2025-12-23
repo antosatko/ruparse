@@ -62,57 +62,17 @@ impl<'a> Parser<'a> {
 mod tests {
 
     use core::panic;
-
-    use arena::Arena;
+    use std::time::Instant;
 
     use crate::{
         api::ext::{enumerator, local, node, text, token, word},
+        grammar::Comparison,
         lexer::TokenKinds,
     };
 
-    use self::grammar::{Parameters, VariableKind};
+    use self::grammar::VariableKind;
 
     use super::*;
-
-    #[test]
-    fn arithmetic_tokens() {
-        let mut parser = Parser::new();
-        let txt = "Function 1 +\n 2 * 3 - 4 /= 5";
-        // Tokens that will be recognized by the lexer
-        //
-        // White space is ignored by default
-        //
-        // Everything else is a text token
-        parser
-            .lexer
-            .add_tokens(["+", "-", "*", "/=", "Function"].into_iter());
-
-        // Parse the text
-        let tokens = parser.lexer.lex_utf8(txt).unwrap();
-
-        assert_eq!(tokens.len(), 21);
-    }
-
-    #[test]
-    fn stringify() {
-        let mut parser = Parser::new();
-        let txt = "Functiond\t 1 +\n 2 * 3 - 4 /= 5";
-        // Tokens that will be recognized by the lexer
-        //
-        // White space is ignored by default
-        //
-        // Everything else is a text token
-        parser
-            .lexer
-            .add_tokens(["+", "-", "*", "/=", "Function"].into_iter());
-
-        // Parse the text
-        let tokens = parser.lexer.lex_utf8(txt).unwrap();
-
-        assert_eq!(parser.lexer.stringify_slice(&tokens, txt), txt);
-        assert_eq!(parser.lexer.stringify_slice(&tokens[0..1], txt), "Function");
-        assert_eq!(parser.lexer.stringify_slice(&tokens[1..5], txt), "d\t 1");
-    }
 
     #[test]
     fn unfinished_token() {
@@ -163,6 +123,7 @@ mod tests {
                 ext::maybe(token(":")).then([ext::is(text()).set(local("type"))]),
                 ext::maybe(token("=")).then([ext::is(node(value)).set(local("value"))]),
                 ext::maybe(token(";")),
+                ext::compare(local("ident"), local("value"), Comparison::Equal),
             ]),
             variables: [
                 ("ident", VariableKind::Node),
@@ -184,35 +145,38 @@ mod tests {
             }
             panic!()
         }
-
+        let start_time = Instant::now();
         match parser.parse(&tokens, txt) {
             Ok(res) => {
+                println!("Parsing done, duration: {:?}", start_time.elapsed());
                 let entry = res.entry;
-                let ident = parser.lexer.stringify(
-                    entry
-                        .variables
-                        .get("ident")
-                        .unwrap()
-                        .unwrap_node()
-                        .unwrap_token(),
-                    txt,
-                );
+                let ident = entry
+                    .variables
+                    .get("ident")
+                    .unwrap()
+                    .unwrap_node()
+                    .stringify(txt);
                 print!("result: let {ident}");
-                let let_type = parser.lexer.stringify(
-                    entry
-                        .variables
-                        .get("type")
-                        .unwrap()
-                        .unwrap_node() // panics if no type
-                        .unwrap_token(),
-                    txt,
-                );
-                print!(": {let_type}");
+                if let Some(t) = entry.variables.get("type") {
+                    let t = t.unwrap_node().stringify(txt);
+                    print!(": {t}")
+                }
+                if let Some(v) = entry.try_get_node("value") {
+                    print!(" =");
+                    for node in v.unwrap_node().get_list("nodes") {
+                        let v = node.stringify(txt);
+                        print!(" {v}");
+                    }
+                }
                 print!(";");
 
-                panic!()
+                panic!("All good :)")
             }
             Err(e) => {
+                println!(
+                    "Parsing ended on an error, duration: {:?}",
+                    start_time.elapsed()
+                );
                 panic!("{e}");
             }
         }

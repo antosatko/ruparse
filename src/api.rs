@@ -1,9 +1,10 @@
 use arena::Key;
 
 use crate::{
-    grammar::{self, NodeTag, VariableTag},
+    grammar::{self, NodeTag},
     lexer::{TextLocation, Token},
-    parser, Parser,
+    parser::{self, Nodes},
+    Parser,
 };
 
 // Choose between std and alloc
@@ -198,16 +199,35 @@ impl<'a> Parser<'a> {
     }
 }
 
+impl<'a> Nodes<'a> {
+    pub fn stringify(&self, txt: &'a str) -> &'a str {
+        match self {
+            Nodes::Node(node) => &txt[node.first_string_idx..node.last_string_idx],
+            Nodes::Token(token) => &txt[token.index..token.index + token.len],
+        }
+    }
+
+    pub fn stringify_until(&self, end: &Self, txt: &'a str) -> &'a str {
+        let end = match end {
+            Nodes::Node(node) => node.last_string_idx,
+            Nodes::Token(token) => token.index + token.len,
+        };
+        match self {
+            Nodes::Node(node) => &txt[node.first_string_idx..end],
+            Nodes::Token(token) => &txt[token.index..end],
+        }
+    }
+}
+
 pub mod ext {
-    use std::process::Command;
 
     use arena::Key;
     use smol_str::SmolStr;
 
     use crate::{
         grammar::{
-            Commands, Comparison, EnumeratorTag, GlobalVariableTag, MatchToken, NodeTag, OneOf,
-            Parameters, Rule, VarKind, VariableKind, VariableTag,
+            Commands, Comparison, EnumeratorTag, MatchToken, NodeTag, OneOf, Parameters, Rule,
+            VarKind,
         },
         lexer::{ControlTokenKind, TokenKinds},
     };

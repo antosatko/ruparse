@@ -93,7 +93,7 @@ pub struct Token {
     pub kind: TokenKinds,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, Serialize)]
 pub struct TextLocation {
     pub line: usize,
     pub column: usize,
@@ -104,6 +104,16 @@ impl TextLocation {
         let line = line + 1;
         let column = column + 1;
         TextLocation { line, column }
+    }
+}
+
+impl Token {
+    pub fn stringify<'a>(&self, txt: &'a str) -> &'a str {
+        &txt[self.index..self.index + self.len]
+    }
+
+    pub fn stringify_until<'a>(&self, other: &Self, txt: &'a str) -> &'a str {
+        &txt[self.index..other.index + other.len]
     }
 }
 
@@ -366,31 +376,5 @@ impl Lexer {
         }
 
         Ok(tokens)
-    }
-
-    /// Takes a slice of tokens and returns a string of the text
-    pub fn stringify_slice<'a>(&self, tokens: &[Token], text: &'a str) -> &'a str {
-        let start = match tokens.first() {
-            Some(token) => token.index,
-            None => return "",
-        };
-        let end = match tokens.last() {
-            Some(token) => token.index + token.len,
-            None => return "",
-        };
-        if start >= end {
-            return "";
-        }
-        if end > text.len() {
-            return "";
-        }
-        &text[start..end]
-    }
-
-    pub fn stringify<'a>(&self, token: &Token, text: &'a str) -> &'a str {
-        if token.kind == TokenKinds::Control(ControlTokenKind::Eof) {
-            return "__EOF__";
-        }
-        &text[token.index..token.index + token.len]
     }
 }
