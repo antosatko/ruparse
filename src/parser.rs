@@ -1,9 +1,9 @@
 use crate::{
-    grammar::{EnumeratorTag, NodeTag, VarKind},
+    grammar::{EnumeratorTag, NodeTag, Parameters, VarKind},
     Map,
 };
 
-use arena::Key;
+use crate::arena::Key;
 
 use crate::{
     grammar::{self, Grammar, MatchToken, OneOf},
@@ -27,27 +27,27 @@ cfg_if::cfg_if! {
 }
 
 #[derive(Debug, Clone)]
-pub struct Parser {
-    pub entry: Option<Key<NodeTag>>,
+pub struct Parser<'a> {
+    pub entry: Option<&'a str>,
     /// Option to enable error on eof
     pub eof_error: bool,
 }
 
-impl Default for Parser {
+impl<'a> Default for Parser<'a> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Parser {
-    pub fn new() -> Parser {
+impl<'a> Parser<'a> {
+    pub fn new() -> Parser<'a> {
         Parser {
             entry: None,
             eof_error: false,
         }
     }
 
-    pub(crate) fn parse<'a>(
+    pub(crate) fn parse(
         &'a self,
         grammar: &'a Grammar<'a>,
         lexer: &Lexer,
@@ -63,8 +63,9 @@ impl Parser {
             None => {
                 return Err(ParseError {
                     kind: ParseErrors::MissingEntry,
-                    location: TextLocation::new(0, 0),
+                    location: TextLocation::new(0, 0, 0, 0),
                     node: None,
+                    hint: Some("Set an entry point in the parser"),
                 })
             }
         };
@@ -82,13 +83,13 @@ impl Parser {
                 if !grammar.eof {
                     node
                 } else {
-                    if cursor.to_advance {
+                    if cursor.to_advance && cursor.idx < tokens.len() - 1 {
                         cursor.to_advance = false;
                         cursor.idx += 1;
                     }
                     // If the grammar has an eof token, we need to check if the cursor is at the end of the tokens
                     // Consume all the whitespace tokens
-                    while cursor.idx < tokens.len() && tokens[cursor.idx].kind.is_whitespace() {
+                    while cursor.idx < tokens.len() - 1 && tokens[cursor.idx].kind.is_whitespace() {
                         cursor.idx += 1;
                     }
                     if let TokenKinds::Control(crate::lexer::ControlTokenKind::Eof) =
@@ -100,31 +101,32 @@ impl Parser {
                             kind: ParseErrors::MissingEof(tokens[cursor.idx].kind.clone()),
                             location: tokens[cursor.idx].location.clone(),
                             node: Some(node),
+                            hint: Some("Remove all unneccesary text from the end of file"),
                         });
                     }
                 }
             }
-            Err((err, _)) => return Err(err),
+            Err(err) => return Err(err.1),
         };
 
         Ok(ParseResult { entry, globals })
     }
 
-    fn parse_node<'a>(
+    fn parse_node(
         &'a self,
         grammar: &'a Grammar<'a>,
         lexer: &Lexer,
-        name: &Key<NodeTag>,
+        name: &'a str,
         cursor: &mut Cursor,
         globals: &mut Map<String, VariableKind<'a>>,
         tokens: &Vec<Token>,
         text: &'a str,
-    ) -> Result<Node<'a>, (ParseError<'a>, Node<'a>)> {
+    ) -> Result<Node<'a>, (bool, ParseError<'a>)> {
         #[cfg(feature = "debug")]
         println!("-- start, cursor: {:?}", cursor);
         let mut node = match Node::from_grammar(grammar, name) {
             Ok(node) => node,
-            Err(err) => return Err((err, Node::new("<dummy node>"))),
+            Err(err) => return Err((false, err)),
         };
         node.first_string_idx = tokens[cursor.idx].index;
         // In case the node fails to parse, we want to restore the cursor to its original position
@@ -133,12 +135,13 @@ impl Parser {
             Some(node) => &node.rules,
             None => {
                 return Err((
+                    node.commit,
                     ParseError {
-                        kind: ParseErrors::NodeNotFound(*name),
+                        kind: ParseErrors::NodeNotFound(name),
                         location: tokens[cursor.idx].location.clone(),
                         node: Some(node.clone()),
+                        hint: Some("Please run the parser through validator with .success()"),
                     },
-                    node,
                 ))
             }
         };
@@ -155,7 +158,7 @@ impl Parser {
         );
 
         #[cfg(feature = "debug")]
-        println!("-- end, cursor: {:?}", cursor);
+        println!("-- end: {}, cursor: {:?}", node.name, cursor);
 
         // If the node has not set the last_string_idx, we set it to the end of the last token
         if node.last_string_idx == 0 {
@@ -171,40 +174,46 @@ impl Parser {
                 Msg::Ok => Ok(node),
                 Msg::Return => Ok(node),
                 Msg::Break(n) => Err((
+                    node.commit,
                     ParseError {
                         kind: ParseErrors::CannotBreak(*n),
                         location: tokens[cursor.idx].location.clone(),
                         node: Some(node.clone()),
+                        hint: None,
                     },
-                    node,
                 )),
                 Msg::Back(steps) => Err((
+                    node.commit,
                     ParseError {
                         kind: ParseErrors::CannotGoBack(*steps),
                         location: tokens[cursor.idx].location.clone(),
                         node: Some(node.clone()),
+                        hint: None,
                     },
-                    node,
                 )),
                 Msg::Goto(label) => Err((
+                    node.commit,
                     ParseError {
                         kind: ParseErrors::LabelNotFound(label.to_string()),
                         location: tokens[cursor.idx].location.clone(),
                         node: Some(node.clone()),
+                        hint: None,
                     },
-                    node,
                 )),
             },
-            Err(err) => {
+            Err(mut err) => {
                 #[cfg(feature = "debug")]
                 println!("error: {:?}", err);
                 *cursor = cursor_clone;
-                Err((err, node))
+                if err.node.is_none() {
+                    err.node = Some(node.clone());
+                }
+                Err((node.commit, err))
             }
         }
     }
 
-    fn parse_rules<'a>(
+    fn parse_rules(
         &'a self,
         grammar: &'a Grammar<'a>,
         lexer: &Lexer,
@@ -230,6 +239,7 @@ impl Parser {
                             kind: ParseErrors::Eof,
                             location: tokens[cursor.idx - 1].location.clone(),
                             node: Some(node.clone()),
+                            hint: None,
                         });
                     } else {
                         cursor.idx -= 1;
@@ -260,12 +270,12 @@ impl Parser {
                         globals,
                         cursor_clone,
                         tokens,
+                        Some(parameters),
                         text,
                     )? {
                         TokenCompare::Is(val) => {
                             let is_token = val.is_token();
                             self.parse_parameters(
-                                lexer,
                                 parameters,
                                 cursor,
                                 globals,
@@ -309,6 +319,7 @@ impl Parser {
                         globals,
                         cursor_clone,
                         tokens,
+                        None,
                         text,
                     )? {
                         TokenCompare::Is(_) => {
@@ -318,6 +329,7 @@ impl Parser {
                                 cursor_clone,
                                 &tokens[cursor.idx].location,
                                 Some(node.clone()),
+                                None,
                             )?;
                         }
                         TokenCompare::IsNot(_) => {
@@ -355,6 +367,7 @@ impl Parser {
                             globals,
                             cursor_clone,
                             tokens,
+                            Some(parameters),
                             text,
                         )? {
                             Is(val) => {
@@ -363,7 +376,6 @@ impl Parser {
                                 found = true;
                                 let is_token = val.is_token();
                                 self.parse_parameters(
-                                    lexer,
                                     parameters,
                                     cursor,
                                     globals,
@@ -392,7 +404,7 @@ impl Parser {
                             }
                             IsNot(err) => match err.node {
                                 Some(ref node) => {
-                                    if node.harderror {
+                                    if node.commit {
                                         #[cfg(feature = "debug")]
                                         println!("non recoverable error: {:?}", err);
                                         return Err(err);
@@ -416,6 +428,7 @@ impl Parser {
                             cursor_clone,
                             &tokens[cursor.idx].location,
                             Some(node.clone()),
+                            None,
                         )?;
                     }
                 }
@@ -434,12 +447,12 @@ impl Parser {
                         globals,
                         cursor_clone,
                         tokens,
+                        Some(parameters),
                         text,
                     )? {
                         Is(val) => {
                             let is_token = val.is_token();
                             self.parse_parameters(
-                                lexer,
                                 parameters,
                                 cursor,
                                 globals,
@@ -467,7 +480,7 @@ impl Parser {
                         }
                         IsNot(err) => {
                             if let Some(ref node) = err.node {
-                                if node.harderror {
+                                if node.commit {
                                     return Err(err);
                                 }
                             }
@@ -503,13 +516,13 @@ impl Parser {
                             globals,
                             cursor_clone,
                             tokens,
+                            Some(parameters),
                             text,
                         )? {
                             Is(val) => {
                                 found = true;
                                 let is_token = val.is_token();
                                 self.parse_parameters(
-                                    lexer,
                                     parameters,
                                     cursor,
                                     globals,
@@ -540,7 +553,7 @@ impl Parser {
                             }
                             IsNot(err) => {
                                 if let Some(ref node) = err.node {
-                                    if node.harderror {
+                                    if node.commit {
                                         return Err(err);
                                     }
                                 }
@@ -575,12 +588,12 @@ impl Parser {
                         globals,
                         cursor_clone,
                         tokens,
+                        Some(parameters),
                         text,
                     )? {
                         TokenCompare::Is(val) => {
                             let is_token = val.is_token();
                             self.parse_parameters(
-                                lexer,
                                 parameters,
                                 cursor,
                                 globals,
@@ -609,7 +622,7 @@ impl Parser {
                         }
                         TokenCompare::IsNot(err) => {
                             if let Some(ref node) = err.node {
-                                if node.harderror {
+                                if node.commit {
                                     return Err(err);
                                 }
                             }
@@ -634,6 +647,7 @@ impl Parser {
                         globals,
                         cursor_clone,
                         tokens,
+                        Some(parameters),
                         text,
                     )? {
                         // No need to handle the error here
@@ -643,11 +657,11 @@ impl Parser {
                                 kind: ParseErrors::CouldNotFindToken(token.clone()),
                                 location: tokens[cursor.idx - 1].location.clone(),
                                 node: Some(node.clone()),
+                                hint: None,
                             });
                         }
                     }
                     self.parse_parameters(
-                        lexer,
                         parameters,
                         cursor,
                         globals,
@@ -765,9 +779,10 @@ impl Parser {
                         kind: ParseErrors::Message(message),
                         location: tokens[cursor.idx].location.clone(),
                         node: Some(node.clone()),
+                        hint: None,
                     })?,
-                    grammar::Commands::HardError { set } => {
-                        node.harderror = *set;
+                    grammar::Commands::Commit { set } => {
+                        node.commit = *set;
                     }
                     grammar::Commands::Goto { label } => {
                         msg_bus.send(Msg::Goto(label.to_string()));
@@ -813,13 +828,13 @@ impl Parser {
                                 globals,
                                 cursor_clone,
                                 tokens,
+                                Some(parameters),
                                 text,
                             )? {
                                 Is(val) => {
                                     found = true;
                                     let is_token = val.is_token();
                                     self.parse_parameters(
-                                        lexer,
                                         parameters,
                                         cursor,
                                         globals,
@@ -848,7 +863,7 @@ impl Parser {
                                 }
                                 IsNot(err) => {
                                     if let Some(ref node) = err.node {
-                                        if node.harderror {
+                                        if node.commit {
                                             return Err(err);
                                         }
                                     }
@@ -870,6 +885,7 @@ impl Parser {
                             cursor_clone,
                             &tokens[cursor.idx].location,
                             Some(node.clone()),
+                            None,
                         )?;
                     }
                 }
@@ -953,6 +969,7 @@ impl Parser {
                             kind: ParseErrors::Eof,
                             location: tokens[cursor.idx - 1].location.clone(),
                             node: Some(node.clone()),
+                            hint: None,
                         });
                     } else {
                         cursor.idx -= 1;
@@ -963,15 +980,26 @@ impl Parser {
         Ok(Msg::Ok)
     }
 
-    fn match_token<'a>(
+    fn find_hint<'b>(parameters: Option<&'b [grammar::Parameters<'b>]>) -> Option<&'b str> {
+        parameters?.iter().find_map(|p| {
+            if let grammar::Parameters::Hint(s) = p {
+                Some(*s)
+            } else {
+                None
+            }
+        })
+    }
+
+    fn match_token(
         &'a self,
         grammar: &'a Grammar<'a>,
         lexer: &Lexer,
-        token: &grammar::MatchToken,
+        token: &'a grammar::MatchToken,
         cursor: &mut Cursor,
         globals: &mut Map<String, VariableKind<'a>>,
         cursor_clone: &Cursor,
         tokens: &Vec<Token>,
+        parameters: Option<&'a [Parameters<'a>]>,
         text: &'a str,
     ) -> Result<TokenCompare<'a>, ParseError<'a>> {
         match token {
@@ -983,7 +1011,7 @@ impl Parser {
                         kind: TokenKinds::Control(crate::lexer::ControlTokenKind::Eof),
                         index: 0,
                         len: 0,
-                        location: TextLocation::new(0, 0),
+                        location: TextLocation::new(0, 0, 0, 0),
                     })));
                 }
                 if cursor.idx >= tokens.len() {
@@ -991,6 +1019,7 @@ impl Parser {
                         kind: ParseErrors::Eof,
                         location: tokens[cursor.idx - 1].location.clone(),
                         node: None,
+                        hint: Self::find_hint(parameters),
                     }));
                 }
                 let mut current_token = &tokens[cursor.idx];
@@ -1009,6 +1038,8 @@ impl Parser {
                         },
                         location: current_token.location.clone(),
                         node: None,
+                        hint: Self::find_hint(parameters),
+                        // hint,
                     }));
                 }
                 Ok(TokenCompare::Is(Nodes::Token(current_token.clone())))
@@ -1016,7 +1047,7 @@ impl Parser {
             grammar::MatchToken::Node(node_name) => {
                 match self.parse_node(grammar, lexer, node_name, cursor, globals, tokens, text) {
                     Ok(node) => Ok(TokenCompare::Is(Nodes::Node(node))),
-                    Err((err, node)) => match node.harderror {
+                    Err((commit, err)) => match commit {
                         true => Err(err),
                         false => Ok(TokenCompare::IsNot(err)),
                     },
@@ -1037,6 +1068,7 @@ impl Parser {
                             },
                             location: current_token.location.clone(),
                             node: None,
+                            hint: Self::find_hint(parameters),
                         }));
                     }
                 } else {
@@ -1047,6 +1079,7 @@ impl Parser {
                         },
                         location: current_token.location.clone(),
                         node: None,
+                        hint: Self::find_hint(parameters),
                     }));
                 }
                 Ok(TokenCompare::Is(Nodes::Token(current_token.clone())))
@@ -1054,13 +1087,14 @@ impl Parser {
             grammar::MatchToken::Enumerator(enumerator) => {
                 #[cfg(feature = "debug")]
                 println!("got: {}", grammar.enumerators.get(enumerator).is_some());
-                let enumerator = match grammar.enumerators.get(enumerator) {
+                let enumerator = match grammar.enumerators.get(*enumerator) {
                     Some(enumerator) => enumerator,
                     None => {
                         return Err(ParseError {
-                            kind: ParseErrors::EnumeratorNotFound(*enumerator),
+                            kind: ParseErrors::EnumeratorNotFound(enumerator),
                             location: tokens[cursor.idx].location.clone(),
                             node: None,
+                            hint: Self::find_hint(parameters),
                         });
                     }
                 };
@@ -1075,6 +1109,7 @@ impl Parser {
                             },
                             location: tokens[cursor.idx].location.clone(),
                             node: None,
+                            hint: Self::find_hint(parameters),
                         }));
                     }
                     let token = &enumerator.values[i];
@@ -1086,13 +1121,14 @@ impl Parser {
                         globals,
                         cursor_clone,
                         tokens,
+                        parameters,
                         text,
                     )? {
                         TokenCompare::Is(val) => break val,
                         TokenCompare::IsNot(err) => {
                             *cursor = cursor_clone_local.clone();
                             if let Some(node) = &err.node {
-                                if node.harderror {
+                                if node.commit {
                                     return Err(err);
                                 }
                             }
@@ -1111,9 +1147,8 @@ impl Parser {
         }
     }
 
-    fn parse_parameters<'a>(
+    fn parse_parameters(
         &'a self,
-        lexer: &Lexer,
         parameters: &'a Vec<grammar::Parameters>,
         cursor: &mut Cursor,
         globals: &mut Map<String, VariableKind<'a>>,
@@ -1140,6 +1175,7 @@ impl Parser {
                             kind: ParseErrors::CannotSetVariable(*name, kind.clone()),
                             location: tokens[cursor.idx].location.clone(),
                             node: None,
+                            hint: None,
                         })?,
                     };
                 }
@@ -1175,6 +1211,7 @@ impl Parser {
                             kind: ParseErrors::UncountableVariable(*ident, kind.clone()),
                             location: tokens[cursor.idx].location.clone(),
                             node: None,
+                            hint: None,
                         })?,
                     };
                 }
@@ -1185,6 +1222,7 @@ impl Parser {
                             *val -= 1;
                         }
                         _ => Err(ParseError {
+                            hint: None,
                             kind: ParseErrors::UncountableVariable(*ident, kind.clone()),
                             location: tokens[cursor.idx].location.clone(),
                             node: None,
@@ -1197,6 +1235,7 @@ impl Parser {
                         *val = true;
                     } else {
                         return Err(ParseError {
+                            hint: None,
                             kind: ParseErrors::UncountableVariable(*variable, kind.clone()),
                             location: tokens[cursor.idx].location.clone(),
                             node: None,
@@ -1209,14 +1248,15 @@ impl Parser {
                         *val = false;
                     } else {
                         return Err(ParseError {
+                            hint: None,
                             kind: ParseErrors::UncountableVariable(*variable, kind.clone()),
                             location: tokens[cursor.idx].location.clone(),
                             node: None,
                         });
                     }
                 }
-                grammar::Parameters::HardError(value) => {
-                    node.harderror = *value;
+                grammar::Parameters::Commit(value) => {
+                    node.commit = *value;
                 }
                 grammar::Parameters::NodeStart => {
                     node.first_string_idx = tokens[cursor.idx].index;
@@ -1236,6 +1276,7 @@ impl Parser {
                 grammar::Parameters::Break(n) => {
                     bus.send(Msg::Break(*n));
                 }
+                grammar::Parameters::Hint(_) => (),
             }
         }
         Ok(())
@@ -1370,7 +1411,7 @@ pub struct Node<'a> {
     pub variables: Map<String, VariableKind<'a>>,
     pub(crate) first_string_idx: usize,
     pub(crate) last_string_idx: usize,
-    pub(crate) harderror: bool,
+    pub(crate) commit: bool,
     pub docs: Option<&'a str>,
     pub location: TextLocation,
 }
@@ -1382,22 +1423,23 @@ impl<'a> Node<'a> {
             variables: Map::new(),
             first_string_idx: 0,
             last_string_idx: 0,
-            harderror: false,
+            commit: false,
             docs: None,
-            location: TextLocation::new(0, 0),
+            location: TextLocation::new(0, 0, 0, 0),
         }
     }
 
     pub fn from_grammar(
         grammar: &'a Grammar<'a>,
-        name: &Key<NodeTag>,
+        name: &'a str,
     ) -> Result<Node<'a>, ParseError<'a>> {
         let found = match grammar.nodes.get(name) {
             Some(node) => node,
             None => {
                 return Err(ParseError {
-                    kind: ParseErrors::NodeNotFound(*name),
-                    location: TextLocation::new(0, 0),
+                    hint: None,
+                    kind: ParseErrors::NodeNotFound(name),
+                    location: TextLocation::new(0, 0, 0, 0),
                     node: None,
                 })
             }
@@ -1431,12 +1473,14 @@ fn err<'a>(
     cursor_clone: &Cursor,
     location: &TextLocation,
     node: Option<Node<'a>>,
+    parameters: Option<&'a [Parameters<'a>]>,
 ) -> Result<(), ParseError<'a>> {
     *cursor = cursor_clone.clone();
     Err(ParseError {
         kind: error,
         location: location.clone(),
         node,
+        hint: Parser::find_hint(parameters),
     })
 }
 
@@ -1484,6 +1528,13 @@ impl<'a> VariableKind<'a> {
         }
     }
 
+    pub fn try_unwrap_node(&self) -> &Option<Nodes<'_>> {
+        match self {
+            VariableKind::Node(n) => n,
+            _ => panic!("try_unwrap_node called on {self:#?}"),
+        }
+    }
+
     pub fn unwrap_node_list(&self) -> &Vec<Nodes<'_>> {
         match self {
             VariableKind::NodeList(list) => list,
@@ -1508,9 +1559,10 @@ impl<'a> VariableKind<'a> {
 
 #[derive(Clone)]
 pub struct ParseError<'a> {
-    kind: ParseErrors<'a>,
-    location: TextLocation,
-    node: Option<Node<'a>>,
+    pub kind: ParseErrors<'a>,
+    pub location: TextLocation,
+    pub node: Option<Node<'a>>,
+    pub hint: Option<&'a str>,
 }
 
 impl<'a> fmt::Debug for ParseError<'a> {
@@ -1550,7 +1602,7 @@ pub enum ParseErrors<'a> {
     /// Parser not fully implemented - My fault
     ParserNotFullyImplemented,
     /// Node not found - Developer error
-    NodeNotFound(Key<NodeTag>),
+    NodeNotFound(&'a str),
     /// Expected a token, found a token
     ExpectedToken {
         expected: TokenKinds,
@@ -1562,7 +1614,7 @@ pub enum ParseErrors<'a> {
         found: TokenKinds,
     },
     /// Enumerator not found - Developer error
-    EnumeratorNotFound(Key<EnumeratorTag>),
+    EnumeratorNotFound(&'a str),
     /// Expected to not be
     ExpectedToNotBe(TokenKinds),
     /// Variable not found - Developer error
@@ -1598,16 +1650,42 @@ pub enum ParseErrors<'a> {
     Ok,
 }
 
+impl<'a> ParseErrors<'a> {
+    pub fn id_and_header(&self) -> (&'static str, &'static str) {
+        match self {
+            ParseErrors::ParserNotFullyImplemented => ("200", "Parser not fully implemented"),
+            ParseErrors::NodeNotFound(_) => ("150", "Node not found"),
+            ParseErrors::ExpectedToken { .. } => ("201", "Unexpected token"),
+            ParseErrors::ExpectedWord { .. } => ("201", "Unexpected token"),
+            ParseErrors::ExpectedToNotBe(_) => ("201", "Unexpected token"),
+            ParseErrors::EnumeratorNotFound(_) => ("151", "Enumerator not found"),
+            ParseErrors::VariableNotFound(_) => ("152", "Variable not found"),
+            ParseErrors::UncountableVariable(_, _) => ("153", "Variable is uncountable"),
+            ParseErrors::CannotSetVariable(_, _) => ("154", "Variable can not be set"),
+            ParseErrors::Message(_) => ("---", "Custom parser message, please implement properly"),
+            ParseErrors::Eof => ("202", "Unexpected end of file"),
+            ParseErrors::LabelNotFound(_) => ("155", "Label bot found"),
+            ParseErrors::CannotGoBack(_) => ("156", "Can not go back"),
+            ParseErrors::CannotBreak(_) => ("157", "Can not break"),
+            ParseErrors::ExpectedOneOf { .. } => ("201", "Unexpected token"),
+            ParseErrors::CouldNotFindToken(_) => ("158", "Can not find token"),
+            ParseErrors::MissingEof(_) => ("203", "Could not parse until the end"),
+            ParseErrors::MissingEntry => ("159", "Missing entry point"),
+            ParseErrors::Ok => ("---", "Ok"),
+        }
+    }
+}
+
 impl<'a> fmt::Debug for ParseErrors<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             ParseErrors::ParserNotFullyImplemented => write!(f, "Parser not fully implemented"),
             ParseErrors::NodeNotFound(_name) => write!(f, "Node not found: working on it :)"),
             ParseErrors::ExpectedToken { expected, found } => {
-                write!(f, "Expected token {:?}, found {:?}", expected, found)
+                write!(f, "Expected token {} - found {}", expected, found)
             }
             ParseErrors::ExpectedWord { expected, found } => {
-                write!(f, "Expected word {}, found {:?}", expected, found)
+                write!(f, "Expected word {} - found {}", expected, found)
             }
             ParseErrors::EnumeratorNotFound(_name) => {
                 write!(f, "Enumerator not found: working on it :)")
@@ -1628,13 +1706,13 @@ impl<'a> fmt::Debug for ParseErrors<'a> {
             ParseErrors::CannotGoBack(steps) => write!(f, "Cannot go back {} steps", steps),
             ParseErrors::CannotBreak(n) => write!(f, "Cannot break {} more steps", n),
             ParseErrors::ExpectedOneOf { expected, found } => {
-                write!(f, "Expected one of {:?}, found {:?}", expected, found)
+                write!(f, "Expected one of {:?} - found {}", expected, found)
             }
             ParseErrors::CouldNotFindToken(kind) => write!(f, "Could not find token {:?}", kind),
             ParseErrors::Ok => write!(f, "If you see this, it could be a bug in the parser"),
             ParseErrors::MissingEof(found) => write!(
                 f,
-                "Could not parse to the end of the file - found {:?}",
+                "Could not parse to the end of the file - found {}",
                 found
             ),
             ParseErrors::MissingEntry => write!(f, "Entry node not set"),
@@ -1674,6 +1752,7 @@ impl MsgBus {
     }
 }
 
+#[derive(Debug, Clone)]
 enum Msg {
     Return,
     Break(usize),

@@ -1,4 +1,4 @@
-use arena::Key;
+use crate::arena::Key;
 
 use crate::{
     grammar::{self, NodeTag},
@@ -188,17 +188,6 @@ impl<'a> parser::ParseResult<'a> {
     }
 }
 
-impl<'a> Parser<'a> {
-    pub fn new_node_recursive(
-        &mut self,
-        cb: impl FnOnce(Key<NodeTag>) -> grammar::Node<'a>,
-    ) -> Key<NodeTag> {
-        let key = unsafe { self.grammar.nodes.empty_alloc() };
-        *self.grammar.nodes.get_mut_unchecked(&key) = cb(key);
-        key
-    }
-}
-
 impl<'a> Nodes<'a> {
     pub fn stringify(&self, txt: &'a str) -> &'a str {
         match self {
@@ -221,7 +210,7 @@ impl<'a> Nodes<'a> {
 
 pub mod ext {
 
-    use arena::Key;
+    use crate::arena::Key;
     use smol_str::SmolStr;
 
     use crate::{
@@ -252,11 +241,11 @@ pub mod ext {
         MatchToken::Any
     }
 
-    pub fn node(node: Key<NodeTag>) -> MatchToken<'static> {
+    pub fn node<'a>(node: &'a str) -> MatchToken<'a> {
         MatchToken::Node(node)
     }
 
-    pub fn enumerator(enumerator: Key<EnumeratorTag>) -> MatchToken<'static> {
+    pub fn enumerator<'a>(enumerator: &'a str) -> MatchToken<'a> {
         MatchToken::Enumerator(enumerator)
     }
 
@@ -341,9 +330,9 @@ pub mod ext {
         }
     }
 
-    pub fn hard_err() -> Rule<'static> {
+    pub fn commit() -> Rule<'static> {
         Rule::Command {
-            command: Commands::HardError { set: true },
+            command: Commands::Commit { set: true },
         }
     }
 
@@ -400,12 +389,16 @@ pub mod ext {
             self.params([Parameters::Set(var)])
         }
 
-        pub fn hard_err(self) -> Self {
-            self.params([Parameters::HardError(true)])
+        pub fn commit(self) -> Self {
+            self.params([Parameters::Commit(true)])
         }
 
         pub fn print(self, txt: &'a str) -> Self {
             self.params([Parameters::Print(txt)])
+        }
+
+        pub fn hint(self, txt: &'a str) -> Self {
+            self.params([Parameters::Hint(txt)])
         }
 
         pub fn start(self) -> Self {
@@ -421,7 +414,7 @@ pub mod ext {
         }
     }
 
-    pub fn local<'a>(name: &'a str) -> VarKind<'a> {
+    pub const fn local<'a>(name: &'a str) -> VarKind<'a> {
         VarKind::Local(name)
     }
 
@@ -454,6 +447,34 @@ pub mod ext {
         pub fn params(mut self, params: impl IntoIterator<Item = Parameters<'a>>) -> Self {
             self.parameters = params.into_iter().collect();
             self
+        }
+
+        pub fn set(self, var: VarKind<'a>) -> Self {
+            self.params([Parameters::Set(var)])
+        }
+
+        pub fn commit(self) -> Self {
+            self.params([Parameters::Commit(true)])
+        }
+
+        pub fn print(self, txt: &'a str) -> Self {
+            self.params([Parameters::Print(txt)])
+        }
+
+        pub fn hint(self, txt: &'a str) -> Self {
+            self.params([Parameters::Hint(txt)])
+        }
+
+        pub fn start(self) -> Self {
+            self.params([Parameters::NodeStart])
+        }
+
+        pub fn end(self) -> Self {
+            self.params([Parameters::NodeEnd])
+        }
+
+        pub fn return_node(self) -> Self {
+            self.params([Parameters::Return])
         }
     }
 }
