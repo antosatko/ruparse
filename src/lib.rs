@@ -1,14 +1,11 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 pub mod api;
-pub mod arena;
 pub mod grammar;
 pub mod lexer;
 pub mod parser;
 
 pub mod format;
-
-pub use arena::Arena;
 
 // Choose between std and alloc
 cfg_if::cfg_if! {

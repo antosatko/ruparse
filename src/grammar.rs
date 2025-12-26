@@ -1,6 +1,5 @@
 use crate::{lexer::TokenKinds, parser, Map};
 
-use crate::arena::Key;
 use serde::Deserialize;
 
 // Choose between std and alloc
@@ -14,13 +13,6 @@ cfg_if::cfg_if! {
         use alloc::vec::*;
     }
 }
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct NodeTag;
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct EnumeratorTag;
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct VariableTag;
 
 #[derive(Debug, Clone)]
 pub struct Grammar<'a> {
@@ -368,25 +360,13 @@ pub mod validator {
     use super::*;
     use crate::{lexer::*, Parser};
 
-    #[derive(Copy, Clone, Debug)]
+    #[derive(Copy, Clone, Debug, Default)]
     pub struct Validator {
         pub tokens: TokenValidator,
         pub allow_print: bool,
         pub allow_debug: bool,
         pub allow_any: bool,
         pub allow_back: bool,
-    }
-
-    impl Default for Validator {
-        fn default() -> Self {
-            Self {
-                tokens: Default::default(),
-                allow_print: false,
-                allow_debug: false,
-                allow_any: false,
-                allow_back: false,
-            }
-        }
     }
 
     #[derive(Copy, Clone, Debug)]
@@ -413,7 +393,7 @@ pub mod validator {
             let mut result = ValidationResult::new();
 
             self.validate_tokens(&parser.lexer, &mut result);
-            self.validate_grammar(&parser, &mut result);
+            self.validate_grammar(parser, &mut result);
 
             result
         }
@@ -436,7 +416,7 @@ pub mod validator {
                     });
                 }
                 // check if token is empty
-                if token == "" {
+                if token.is_empty() {
                     result.errors.push(ValidationError {
                         kind: ValidationErrors::EmptyToken,
                         node: None,
@@ -498,7 +478,7 @@ pub mod validator {
             result: &mut ValidationResult<'a>,
         ) {
             for (_, node) in parser.grammar.nodes.iter() {
-                self.validate_node(node, &parser, result);
+                self.validate_node(node, parser, result);
             }
         }
 
@@ -594,7 +574,7 @@ pub mod validator {
                 }
                 Rule::UntilOneOf { tokens } => {
                     for one_of in tokens {
-                        self.validate_token(&one_of.token, node, &parser, result);
+                        self.validate_token(&one_of.token, node, parser, result);
                         self.validate_parameters(&one_of.parameters, parser, node, laf, result);
                         self.validate_ruleblock(&one_of.rules, node, parser, laf, result)
                     }
@@ -1045,7 +1025,7 @@ pub mod validator {
 
     #[derive(Debug, Clone)]
     pub enum ValidationWarnings<'a> {
-        UnusedVariable(Key<VariableTag>),
+        UnusedVariable(&'a str),
         UsedDebug,
         UsedPrint,
         UsedDepricated(Depricated),

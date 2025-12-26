@@ -50,10 +50,7 @@ impl<'a> ParseError<'a> {
         filename: Option<&str>,
     ) -> std::result::Result<(), std::fmt::Error> {
         let (id, header) = self.kind.id_and_header();
-        let span = match &self.node {
-            // Some(node) => node.first_string_idx..node.last_string_idx,
-            _ => self.location.index..self.location.index + self.location.len,
-        };
+        let span = self.location.index..self.location.index + self.location.len;
         let mut snippet = Snippet::source(txt).annotation(
             AnnotationKind::Primary
                 .span(span)

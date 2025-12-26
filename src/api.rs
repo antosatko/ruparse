@@ -1,10 +1,7 @@
-use crate::arena::Key;
 
 use crate::{
-    grammar::{self, NodeTag},
     lexer::{TextLocation, Token},
     parser::{self, Nodes},
-    Parser,
 };
 
 // Choose between std and alloc
@@ -93,8 +90,8 @@ impl<'a> parser::Nodes<'a> {
 
     pub fn location(&self) -> TextLocation {
         match self {
-            parser::Nodes::Node(node) => node.location.clone(),
-            parser::Nodes::Token(tok) => tok.location.clone(),
+            parser::Nodes::Node(node) => node.location,
+            parser::Nodes::Token(tok) => tok.location,
         }
     }
 }
@@ -210,12 +207,12 @@ impl<'a> Nodes<'a> {
 
 pub mod ext {
 
-    use crate::arena::Key;
+    
     use smol_str::SmolStr;
 
     use crate::{
         grammar::{
-            Commands, Comparison, EnumeratorTag, MatchToken, NodeTag, OneOf, Parameters, Rule,
+            Commands, Comparison, MatchToken, OneOf, Parameters, Rule,
             VarKind,
         },
         lexer::{ControlTokenKind, TokenKinds},
