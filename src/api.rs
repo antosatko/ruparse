@@ -1,4 +1,3 @@
-
 use crate::{
     lexer::{TextLocation, Token},
     parser::{self, Nodes},
@@ -207,13 +206,12 @@ impl<'a> Nodes<'a> {
 
 pub mod ext {
 
-    
     use smol_str::SmolStr;
 
     use crate::{
         grammar::{
-            Commands, Comparison, MatchToken, OneOf, Parameters, Rule,
-            VarKind,
+            Commands, Comparison, Enumerator, Grammar, MatchToken, Node, OneOf, Parameters, Rule,
+            VarKind, VariableKind,
         },
         lexer::{ControlTokenKind, TokenKinds},
     };
@@ -427,6 +425,28 @@ pub mod ext {
         rules.into_iter().collect()
     }
 
+    pub fn variables<'a>(
+        variables: impl IntoIterator<Item = (&'a str, VariableKind)>,
+    ) -> Vec<(&'a str, VariableKind)> {
+        variables.into_iter().collect()
+    }
+
+    pub fn node_var<'a>(name: &'a str) -> (&'a str, VariableKind) {
+        (name, VariableKind::Node)
+    }
+
+    pub fn list_var<'a>(name: &'a str) -> (&'a str, VariableKind) {
+        (name, VariableKind::NodeList)
+    }
+
+    pub fn number_var<'a>(name: &'a str) -> (&'a str, VariableKind) {
+        (name, VariableKind::Number)
+    }
+
+    pub fn bool_var<'a>(name: &'a str) -> (&'a str, VariableKind) {
+        (name, VariableKind::Boolean)
+    }
+
     pub fn option<'a>(matches: MatchToken<'a>) -> OneOf<'a> {
         OneOf {
             token: matches,
@@ -472,6 +492,97 @@ pub mod ext {
 
         pub fn return_node(self) -> Self {
             self.params([Parameters::Return])
+        }
+    }
+
+    pub struct NodeBuilder<'g, 'a> {
+        grammar: &'g mut Grammar<'a>,
+        pub name: &'a str,
+        pub rules: Vec<Rule<'a>>,
+        pub variables: Vec<(&'a str, VariableKind)>,
+        pub docs: Option<&'a str>,
+    }
+
+    pub struct EnumBuilder<'g, 'a> {
+        grammar: &'g mut Grammar<'a>,
+        pub name: &'a str,
+        pub options: Vec<MatchToken<'a>>,
+    }
+
+    impl<'a> Grammar<'a> {
+        pub fn new_node<'g>(&'g mut self, name: &'a str) -> NodeBuilder<'g, 'a> {
+            NodeBuilder {
+                grammar: self,
+                name,
+                rules: Vec::new(),
+                variables: Vec::new(),
+                docs: None,
+            }
+        }
+
+        pub fn new_enum<'g>(&'g mut self, name: &'a str) -> EnumBuilder<'g, 'a> {
+            EnumBuilder {
+                grammar: self,
+                name,
+                options: Vec::new(),
+            }
+        }
+    }
+
+    impl<'g, 'a> NodeBuilder<'g, 'a> {
+        pub fn name(mut self, name: &'a str) -> Self {
+            self.name = name;
+            self
+        }
+
+        pub fn rules(mut self, rules: impl IntoIterator<Item = Rule<'a>>) -> Self {
+            self.rules.extend(rules);
+            self
+        }
+
+        pub fn variables(
+            mut self,
+            variables: impl IntoIterator<Item = (&'a str, VariableKind)>,
+        ) -> Self {
+            self.variables.extend(variables);
+            self
+        }
+
+        pub fn docs(mut self, text: &'a str) -> Self {
+            self.docs = Some(text);
+            self
+        }
+
+        pub fn build(self) {
+            let node = Node {
+                name: self.name,
+                rules: self.rules,
+                variables: self.variables,
+                docs: self.docs,
+            };
+            self.grammar.add_node(node);
+            // ← mutable borrow of Grammar ends here
+        }
+    }
+
+    impl<'g, 'a> EnumBuilder<'g, 'a> {
+        pub fn name(mut self, name: &'a str) -> Self {
+            self.name = name;
+            self
+        }
+
+        pub fn options(mut self, options: impl IntoIterator<Item = MatchToken<'a>>) -> Self {
+            self.options.extend(options);
+            self
+        }
+
+        pub fn build(self) {
+            let enumerator = Enumerator {
+                name: self.name,
+                values: self.options,
+            };
+            self.grammar.add_enum(enumerator);
+            // ← mutable borrow released
         }
     }
 }

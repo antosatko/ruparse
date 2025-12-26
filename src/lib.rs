@@ -87,7 +87,7 @@ mod tests {
     fn rules() {
         use crate::api::ext;
 
-        let txt = "let   danda sagsdfg= sdf;\n\tlet b";
+        let txt = "let   danda = sdf;\n\tlet b;";
 
         let mut parser = Parser::new();
         parser
