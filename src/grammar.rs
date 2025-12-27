@@ -147,7 +147,7 @@ pub enum Rule<'a> {
         command: Commands<'a>,
     },
     Debug {
-        target: Option<&'a str>,
+        target: Option<VarKind<'a>>,
     },
 }
 
@@ -196,6 +196,17 @@ impl<'a> VarKind<'a> {
         match self {
             VarKind::Local(v) => locals.get_mut(*v),
             VarKind::Global(v) => globals.get_mut(*v),
+        }
+    }
+
+    pub fn validate<'b>(
+        &self,
+        locals: &[(&'a str, VariableKind)],
+        globals: &[(&'a str, VariableKind)],
+    ) -> bool {
+        match self {
+            Self::Local(name) => locals.iter().find(|(n, _)| n == name).is_some(),
+            Self::Global(name) => globals.iter().find(|(n, _)| n == name).is_some(),
         }
     }
 }
@@ -697,18 +708,17 @@ pub mod validator {
                     }
                     Commands::Print { message: _ } => (),
                 },
-                Rule::Debug { target: _ } => (), // match target {
-                                                 //     Some(name) => match node.variables.get(&SmolStr::new(name)) {
-                                                 //         Some(_) => (),
-                                                 //         None => {
-                                                 //             result.errors.push(ValidationError {
-                                                 //                 kind: ValidationErrors::VariableNotFound(&name),
-                                                 //                 node: Some(&node),
-                                                 //             });
-                                                 //         }
-                                                 //     },
-                                                 //     None => (),
-                                                 // },
+                Rule::Debug { target } => match target {
+                    Some(name) => {
+                        if !name.validate(&node.variables, &parser.grammar.globals) {
+                            result.errors.push(ValidationError {
+                                kind: ValidationErrors::VariableNotFound(*name),
+                                node: Some(&node),
+                            });
+                        }
+                    }
+                    _ => (),
+                },
             }
         }
 
@@ -736,21 +746,21 @@ pub mod validator {
             result: &mut ValidationResult<'a>,
         ) {
             match token {
-                MatchToken::Node(_name) => {
-                    // if !parser.grammar.nodes.get(name).is_some() {
-                    //     result.errors.push(ValidationError {
-                    //         kind: ValidationErrors::NodeNotFound(&name),
-                    //         node: Some(&node),
-                    //     });
-                    // }
+                MatchToken::Node(name) => {
+                    if !parser.grammar.nodes.get(*name).is_some() {
+                        result.errors.push(ValidationError {
+                            kind: ValidationErrors::NodeNotFound(&name),
+                            node: Some(&node),
+                        });
+                    }
                 }
-                MatchToken::Enumerator(_enumerator) => {
-                    // if !self.enumerators.contains_key(&SmolStr::new(enumerator)) {
-                    //     result.errors.push(ValidationError {
-                    //         kind: ValidationErrors::EnumeratorNotFound(&enumerator),
-                    //         node: Some(&node),
-                    //     });
-                    // }
+                MatchToken::Enumerator(enumerator) => {
+                    if !parser.grammar.enumerators.contains_key(*enumerator) {
+                        result.errors.push(ValidationError {
+                            kind: ValidationErrors::EnumeratorNotFound(&enumerator),
+                            node: Some(&node),
+                        });
+                    }
                 }
                 MatchToken::Any => result.warnings.push(ValidationWarning {
                     kind: ValidationWarnings::UsedDepricated(Depricated::Any),
@@ -1011,6 +1021,8 @@ pub mod validator {
         TokenNotFound(SmolStr),
         DuplicateLabel(&'a str),
         LabelNotFound(&'a str),
+        NodeNotFound(&'a str),
+        EnumeratorNotFound(&'a str),
         TokenCollision(SmolStr),
         CannotGoBackMoreThan { steps: usize, max: usize },
     }
@@ -1164,6 +1176,10 @@ pub mod validator {
                 ValidationErrors::VariableNotFound(var_kind) => {
                     write!(f, "Variable {var_kind:?} not found")
                 }
+                ValidationErrors::NodeNotFound(name) => write!(f, "Node {name:?} not found"),
+                ValidationErrors::EnumeratorNotFound(name) => {
+                    write!(f, "Enumerator {name:?} not found")
+                }
             }
         }
     }
@@ -1180,6 +1196,8 @@ pub mod validator {
                 ValidationErrors::LabelNotFound(_) => ("106", "Label not found"),
                 ValidationErrors::TokenCollision(_) => ("107", "Duplicate token"),
                 ValidationErrors::CannotGoBackMoreThan { .. } => ("108", "Out of scope"),
+                ValidationErrors::NodeNotFound(_) => ("106", "Node not found"),
+                ValidationErrors::EnumeratorNotFound(_) => ("106", "Enumerator not found"),
             }
         }
     }
