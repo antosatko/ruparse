@@ -1,4 +1,3 @@
-use serde::Serialize;
 use smol_str::SmolStr;
 
 // Choose between std and alloc
@@ -17,7 +16,7 @@ cfg_if::cfg_if! {
     }
 }
 
-#[derive(Serialize, Debug, PartialEq, Eq, Clone, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum TokenKinds {
     /// A sequence of characters
     Token(SmolStr),
@@ -38,7 +37,7 @@ impl TokenKinds {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum ControlTokenKind {
     Eof,
     Eol,
@@ -72,16 +71,15 @@ impl fmt::Display for PreprocessorError {
     }
 }
 
-#[derive(Serialize, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct Lexer {
     /// Possible token kinds
     pub(crate) token_kinds: Vec<SmolStr>,
     longest_token_size: usize,
-    #[serde(skip, default)]
     pub preprocessors: Vec<Preprocessor>,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Hash, Serialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct Token {
     /// Index of the token in the text
     pub index: usize,
@@ -93,7 +91,7 @@ pub struct Token {
     pub kind: TokenKinds,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash, Serialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct TextLocation {
     pub line: usize,
     pub column: usize,

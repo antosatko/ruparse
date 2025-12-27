@@ -1,7 +1,6 @@
 use crate::{lexer::TokenKinds, parser, Map};
 
 use arena::{Arena, Key};
-use serde::Deserialize;
 
 // Choose between std and alloc
 cfg_if::cfg_if! {
@@ -239,7 +238,7 @@ pub enum Commands<'a> {
 }
 
 /// Comparison operators
-#[derive(Clone, Debug, PartialEq, Copy, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Copy)]
 pub enum Comparison {
     /// ==
     Equal,
@@ -286,7 +285,7 @@ pub struct Node<'a> {
 }
 
 /// A variable that can be used in a node
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum VariableKind {
     /// Holds a single node
     Node,
@@ -982,7 +981,7 @@ pub mod validator {
         UnusedLabel(&'a str),
     }
 
-    #[derive(Deserialize, Debug, Clone)]
+    #[derive(Debug, Clone)]
     pub enum TokenErrors {
         NotAscii,
         ContainsWhitespace,
@@ -990,7 +989,7 @@ pub mod validator {
         StartsNumeric,
     }
 
-    #[derive(Deserialize, Debug, Clone)]
+    #[derive(Debug, Clone)]
     pub enum Depricated {
         /// The feature is depricated
         ///

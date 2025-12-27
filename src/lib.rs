@@ -88,7 +88,7 @@ mod tests {
         use crate::api::ext;
 
         let mut parser = Parser::new();
-        let txt = "let   danda:hhh=  1+60;";
+        let txt = "let   danda:o=  1+60;";
         parser.lexer.add_token("=");
         parser.lexer.add_token(":");
         parser.lexer.add_token("+");
@@ -169,8 +169,6 @@ mod tests {
                     }
                 }
                 print!(";");
-
-                panic!("All good :)")
             }
             Err(e) => {
                 println!(

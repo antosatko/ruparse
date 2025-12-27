@@ -98,7 +98,7 @@ impl Parser {
                     } else {
                         return Err(ParseError {
                             kind: ParseErrors::MissingEof(tokens[cursor.idx].kind.clone()),
-                            location: tokens[cursor.idx].location.clone(),
+                            location: tokens[cursor.idx].location,
                             node: Some(node),
                         });
                     }
@@ -135,7 +135,7 @@ impl Parser {
                 return Err((
                     ParseError {
                         kind: ParseErrors::NodeNotFound(*name),
-                        location: tokens[cursor.idx].location.clone(),
+                        location: tokens[cursor.idx].location,
                         node: Some(node.clone()),
                     },
                     node,
@@ -173,7 +173,7 @@ impl Parser {
                 Msg::Break(n) => Err((
                     ParseError {
                         kind: ParseErrors::CannotBreak(*n),
-                        location: tokens[cursor.idx].location.clone(),
+                        location: tokens[cursor.idx].location,
                         node: Some(node.clone()),
                     },
                     node,
@@ -181,7 +181,7 @@ impl Parser {
                 Msg::Back(steps) => Err((
                     ParseError {
                         kind: ParseErrors::CannotGoBack(*steps),
-                        location: tokens[cursor.idx].location.clone(),
+                        location: tokens[cursor.idx].location,
                         node: Some(node.clone()),
                     },
                     node,
@@ -189,7 +189,7 @@ impl Parser {
                 Msg::Goto(label) => Err((
                     ParseError {
                         kind: ParseErrors::LabelNotFound(label.to_string()),
-                        location: tokens[cursor.idx].location.clone(),
+                        location: tokens[cursor.idx].location,
                         node: Some(node.clone()),
                     },
                     node,
@@ -228,7 +228,7 @@ impl Parser {
                     if self.eof_error {
                         return Err(ParseError {
                             kind: ParseErrors::Eof,
-                            location: tokens[cursor.idx - 1].location.clone(),
+                            location: tokens[cursor.idx - 1].location,
                             node: Some(node.clone()),
                         });
                     } else {
@@ -641,7 +641,7 @@ impl Parser {
                         if cursor.idx >= tokens.len() {
                             return Err(ParseError {
                                 kind: ParseErrors::CouldNotFindToken(token.clone()),
-                                location: tokens[cursor.idx - 1].location.clone(),
+                                location: tokens[cursor.idx - 1].location,
                                 node: Some(node.clone()),
                             });
                         }
@@ -763,7 +763,7 @@ impl Parser {
                     }
                     grammar::Commands::Error { message } => Err(ParseError {
                         kind: ParseErrors::Message(message),
-                        location: tokens[cursor.idx].location.clone(),
+                        location: tokens[cursor.idx].location,
                         node: Some(node.clone()),
                     })?,
                     grammar::Commands::HardError { set } => {
@@ -951,7 +951,7 @@ impl Parser {
                     if self.eof_error {
                         return Err(ParseError {
                             kind: ParseErrors::Eof,
-                            location: tokens[cursor.idx - 1].location.clone(),
+                            location: tokens[cursor.idx - 1].location,
                             node: Some(node.clone()),
                         });
                     } else {
@@ -989,7 +989,7 @@ impl Parser {
                 if cursor.idx >= tokens.len() {
                     return Ok(TokenCompare::IsNot(ParseError {
                         kind: ParseErrors::Eof,
-                        location: tokens[cursor.idx - 1].location.clone(),
+                        location: tokens[cursor.idx - 1].location,
                         node: None,
                     }));
                 }
@@ -1007,7 +1007,7 @@ impl Parser {
                             expected: tok.clone(),
                             found: current_token.kind.clone(),
                         },
-                        location: current_token.location.clone(),
+                        location: current_token.location,
                         node: None,
                     }));
                 }
@@ -1035,7 +1035,7 @@ impl Parser {
                                 expected: word.to_string(),
                                 found: current_token.kind.clone(),
                             },
-                            location: current_token.location.clone(),
+                            location: current_token.location,
                             node: None,
                         }));
                     }
@@ -1045,7 +1045,7 @@ impl Parser {
                             expected: word.to_string(),
                             found: current_token.kind.clone(),
                         },
-                        location: current_token.location.clone(),
+                        location: current_token.location,
                         node: None,
                     }));
                 }
@@ -1059,7 +1059,7 @@ impl Parser {
                     None => {
                         return Err(ParseError {
                             kind: ParseErrors::EnumeratorNotFound(*enumerator),
-                            location: tokens[cursor.idx].location.clone(),
+                            location: tokens[cursor.idx].location,
                             node: None,
                         });
                     }
@@ -1073,7 +1073,7 @@ impl Parser {
                                 expected: enumerator.values.to_vec(),
                                 found: tokens[cursor.idx].kind.clone(),
                             },
-                            location: tokens[cursor.idx].location.clone(),
+                            location: tokens[cursor.idx].location,
                             node: None,
                         }));
                     }
@@ -1113,7 +1113,7 @@ impl Parser {
 
     fn parse_parameters<'a>(
         &'a self,
-        lexer: &Lexer,
+        _lexer: &Lexer,
         parameters: &'a Vec<grammar::Parameters>,
         cursor: &mut Cursor,
         globals: &mut Map<String, VariableKind<'a>>,
@@ -1138,7 +1138,7 @@ impl Parser {
                         }
                         _ => Err(ParseError {
                             kind: ParseErrors::CannotSetVariable(*name, kind.clone()),
-                            location: tokens[cursor.idx].location.clone(),
+                            location: tokens[cursor.idx].location,
                             node: None,
                         })?,
                     };
@@ -1173,7 +1173,7 @@ impl Parser {
                         }
                         _ => Err(ParseError {
                             kind: ParseErrors::UncountableVariable(*ident, kind.clone()),
-                            location: tokens[cursor.idx].location.clone(),
+                            location: tokens[cursor.idx].location,
                             node: None,
                         })?,
                     };
@@ -1186,7 +1186,7 @@ impl Parser {
                         }
                         _ => Err(ParseError {
                             kind: ParseErrors::UncountableVariable(*ident, kind.clone()),
-                            location: tokens[cursor.idx].location.clone(),
+                            location: tokens[cursor.idx].location,
                             node: None,
                         })?,
                     };
@@ -1198,7 +1198,7 @@ impl Parser {
                     } else {
                         return Err(ParseError {
                             kind: ParseErrors::UncountableVariable(*variable, kind.clone()),
-                            location: tokens[cursor.idx].location.clone(),
+                            location: tokens[cursor.idx].location,
                             node: None,
                         });
                     }
@@ -1210,7 +1210,7 @@ impl Parser {
                     } else {
                         return Err(ParseError {
                             kind: ParseErrors::UncountableVariable(*variable, kind.clone()),
-                            location: tokens[cursor.idx].location.clone(),
+                            location: tokens[cursor.idx].location,
                             node: None,
                         });
                     }
@@ -1435,7 +1435,7 @@ fn err<'a>(
     *cursor = cursor_clone.clone();
     Err(ParseError {
         kind: error,
-        location: location.clone(),
+        location: *location,
         node,
     })
 }
@@ -1479,7 +1479,7 @@ impl<'a> VariableKind<'a> {
 
     pub fn unwrap_node(&self) -> &Nodes<'_> {
         match self {
-            VariableKind::Node(node) => node.as_ref().unwrap(),
+            VariableKind::Node(Some(node)) => node,
             _ => panic!("unwrap_node called on {:#?}", self),
         }
     }

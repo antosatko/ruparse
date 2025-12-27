@@ -93,8 +93,8 @@ impl<'a> parser::Nodes<'a> {
 
     pub fn location(&self) -> TextLocation {
         match self {
-            parser::Nodes::Node(node) => node.location.clone(),
-            parser::Nodes::Token(tok) => tok.location.clone(),
+            parser::Nodes::Node(node) => node.location,
+            parser::Nodes::Token(tok) => tok.location,
         }
     }
 }
