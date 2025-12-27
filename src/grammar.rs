@@ -1,7 +1,5 @@
 use crate::{lexer::TokenKinds, parser, Map};
 
-use serde::Deserialize;
-
 // Choose between std and alloc
 cfg_if::cfg_if! {
     if #[cfg(feature = "std")] {

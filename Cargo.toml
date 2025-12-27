@@ -13,9 +13,7 @@ annotate-snippets = { version = "0.12.10", optional = true }
 
 [features]
 # The default feature set (in development)
-default = ["serde", "std", "err-fmt"]
-# Enable serde and serde_json support (in development)
-serde = ["dep:serde", "dep:serde_json"]
+default = ["std", "err-fmt"]
 # Enable error formating features - using `annotate-snippets` crate
 err-fmt = ["dep:annotate-snippets"]
 # Print debug information during parsing
