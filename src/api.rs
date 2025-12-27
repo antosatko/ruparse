@@ -431,19 +431,19 @@ pub mod ext {
         variables.into_iter().collect()
     }
 
-    pub fn node_var<'a>(name: &'a str) -> (&'a str, VariableKind) {
+    pub fn node_var(name: &str) -> (&str, VariableKind) {
         (name, VariableKind::Node)
     }
 
-    pub fn list_var<'a>(name: &'a str) -> (&'a str, VariableKind) {
+    pub fn list_var(name: &str) -> (&str, VariableKind) {
         (name, VariableKind::NodeList)
     }
 
-    pub fn number_var<'a>(name: &'a str) -> (&'a str, VariableKind) {
+    pub fn number_var(name: &str) -> (&str, VariableKind) {
         (name, VariableKind::Number)
     }
 
-    pub fn bool_var<'a>(name: &'a str) -> (&'a str, VariableKind) {
+    pub fn bool_var(name: &str) -> (&str, VariableKind) {
         (name, VariableKind::Boolean)
     }
 

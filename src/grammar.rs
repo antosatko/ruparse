@@ -205,8 +205,8 @@ impl<'a> VarKind<'a> {
         globals: &[(&'a str, VariableKind)],
     ) -> bool {
         match self {
-            Self::Local(name) => locals.iter().find(|(n, _)| n == name).is_some(),
-            Self::Global(name) => globals.iter().find(|(n, _)| n == name).is_some(),
+            Self::Local(name) => locals.iter().any(|(n, _)| n == name),
+            Self::Global(name) => globals.iter().any(|(n, _)| n == name),
         }
     }
 }
@@ -708,16 +708,13 @@ pub mod validator {
                     }
                     Commands::Print { message: _ } => (),
                 },
-                Rule::Debug { target } => match target {
-                    Some(name) => {
-                        if !name.validate(&node.variables, &parser.grammar.globals) {
-                            result.errors.push(ValidationError {
-                                kind: ValidationErrors::VariableNotFound(*name),
-                                node: Some(&node),
-                            });
-                        }
+                Rule::Debug { target } => if let Some(name) = target {
+                    if !name.validate(&node.variables, &parser.grammar.globals) {
+                        result.errors.push(ValidationError {
+                            kind: ValidationErrors::VariableNotFound(*name),
+                            node: Some(node),
+                        });
                     }
-                    _ => (),
                 },
             }
         }
@@ -747,18 +744,18 @@ pub mod validator {
         ) {
             match token {
                 MatchToken::Node(name) => {
-                    if !parser.grammar.nodes.get(*name).is_some() {
+                    if parser.grammar.nodes.get(*name).is_none() {
                         result.errors.push(ValidationError {
-                            kind: ValidationErrors::NodeNotFound(&name),
-                            node: Some(&node),
+                            kind: ValidationErrors::NodeNotFound(name),
+                            node: Some(node),
                         });
                     }
                 }
                 MatchToken::Enumerator(enumerator) => {
                     if !parser.grammar.enumerators.contains_key(*enumerator) {
                         result.errors.push(ValidationError {
-                            kind: ValidationErrors::EnumeratorNotFound(&enumerator),
-                            node: Some(&node),
+                            kind: ValidationErrors::EnumeratorNotFound(enumerator),
+                            node: Some(node),
                         });
                     }
                 }
