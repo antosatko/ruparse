@@ -5,7 +5,7 @@ pub mod grammar;
 pub mod lexer;
 pub mod parser;
 
-pub use arena::Arena;
+pub mod format;
 
 // Choose between std and alloc
 cfg_if::cfg_if! {
@@ -28,7 +28,7 @@ cfg_if::cfg_if! {
 pub struct Parser<'a> {
     pub lexer: lexer::Lexer,
     pub grammar: grammar::Grammar<'a>,
-    pub parser: parser::Parser,
+    pub parser: parser::Parser<'a>,
 }
 
 impl<'a> Default for Parser<'a> {
@@ -66,7 +66,7 @@ mod tests {
 
     use crate::{
         api::ext::{enumerator, local, node, text, token, word},
-        grammar::Comparison,
+        grammar::validator::Validator,
         lexer::TokenKinds,
     };
 
@@ -87,43 +87,37 @@ mod tests {
     fn rules() {
         use crate::api::ext;
 
+        let txt = "let   danda = sdf;\n\tlet b;";
+
         let mut parser = Parser::new();
-        let txt = "let   danda:o=  1+60;";
-        parser.lexer.add_token("=");
-        parser.lexer.add_token(":");
-        parser.lexer.add_token("+");
-        parser.lexer.add_token(";");
-        parser.lexer.add_token("-");
-        parser.lexer.add_token("*");
-        parser.lexer.add_token("/");
+        parser
+            .lexer
+            .add_tokens("=:;+-/*".split("").filter(|s| !s.is_empty()));
 
-        let tokens = parser.lexer.lex_utf8(txt).unwrap();
-
-        let operators = parser.grammar.enumerators.push(grammar::Enumerator {
+        parser.grammar.add_enum(grammar::Enumerator {
             name: "operators",
             values: [token("+"), token("-"), token("*"), token("/")].to_vec(),
         });
-        let value = parser.grammar.add_node(grammar::Node {
+        parser.grammar.add_node(grammar::Node {
             name: "value",
             rules: ext::rules([
-                ext::is(text()).set(local("nodes")),
-                ext::while_(enumerator(operators))
+                ext::is(text()).set(local("nodes")).commit(),
+                ext::while_(enumerator("operators"))
                     .set(local("nodes"))
                     .then([ext::is(text()).set(local("nodes"))]),
             ]),
             variables: [("nodes", VariableKind::NodeList)].to_vec(),
-            docs: None,
+            docs: Some("example: 1 + 6 - value1"),
         });
 
-        let kw_let = parser.grammar.add_node(grammar::Node {
+        parser.grammar.add_node(grammar::Node {
             name: "KWLet",
             rules: ext::rules([
-                ext::is(word("let")).hard_err(),
+                ext::is(word("let")).commit().start(),
                 ext::is(text()).set(local("ident")),
                 ext::maybe(token(":")).then([ext::is(text()).set(local("type"))]),
-                ext::maybe(token("=")).then([ext::is(node(value)).set(local("value"))]),
-                ext::maybe(token(";")),
-                ext::compare(local("ident"), local("value"), Comparison::Equal),
+                ext::maybe(token("=")).then([ext::is(node("value")).set(local("value"))]),
+                ext::is(token(";")).hint("Close let statement with a semicolon"),
             ]),
             variables: [
                 ("ident", VariableKind::Node),
@@ -131,42 +125,47 @@ mod tests {
                 ("value", VariableKind::Node),
             ]
             .to_vec(),
-            docs: Some("let <ident>[: <type>] [= <value>];"),
+            docs: Some("example: let identifier: Type = value;"),
         });
-        parser.parser.entry = Some(kw_let);
+        parser.grammar.add_node(grammar::Node {
+            name: "entry",
+            rules: ext::rules([ext::while_(node("KWLet")).set(local("lets"))]),
+            variables: [("lets", VariableKind::NodeList)].to_vec(),
+            docs: Some("A list of let statements"),
+        });
+        parser.parser.entry = Some("entry");
 
-        let valid = parser.grammar.validate(&parser.lexer);
+        let valid = Validator::default().validate(&parser);
         if !valid.success() {
-            for warn in valid.warnings {
-                println!("{}", warn);
-            }
-            for err in valid.errors {
-                println!("{}", err);
-            }
-            panic!()
+            valid.print_all().unwrap();
+            panic!();
         }
+        let tokens = parser.lexer.lex_utf8(txt).unwrap();
         let start_time = Instant::now();
         match parser.parse(&tokens, txt) {
             Ok(res) => {
                 println!("Parsing done, duration: {:?}", start_time.elapsed());
                 let entry = res.entry;
-                let ident = entry
-                    .variables
-                    .get("ident")
-                    .unwrap()
-                    .unwrap_node()
-                    .stringify(txt);
-                print!("result: let {ident}");
-                if let Some(t) = entry.variables.get("type") {
-                    let t = t.unwrap_node().stringify(txt);
-                    print!(": {t}")
-                }
-                if let Some(v) = entry.try_get_node("value") {
-                    print!(" =");
-                    for node in v.unwrap_node().get_list("nodes") {
-                        let v = node.stringify(txt);
-                        print!(" {v}");
+                for entry in entry.get_list("lets").iter().map(|e| e.unwrap_node()) {
+                    let ident = entry
+                        .variables
+                        .get("ident")
+                        .unwrap()
+                        .unwrap_node()
+                        .stringify(txt);
+                    print!("result: let {ident}");
+                    if let Some(t) = entry.variables.get("type").unwrap().try_unwrap_node() {
+                        let t = t.stringify(txt);
+                        print!(": {t}")
                     }
+                    if let Some(v) = entry.try_get_node("value") {
+                        print!(" =");
+                        for node in v.unwrap_node().get_list("nodes") {
+                            let v = node.stringify(txt);
+                            print!(" {v}");
+                        }
+                    }
+                    println!(";");
                 }
                 print!(";");
             }
@@ -175,7 +174,8 @@ mod tests {
                     "Parsing ended on an error, duration: {:?}",
                     start_time.elapsed()
                 );
-                panic!("{e}");
+                e.print(txt, Some(&format!("{}-test", file!()))).unwrap();
+                panic!("");
             }
         }
     }

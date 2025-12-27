@@ -1,10 +1,6 @@
-use arena::Key;
-
 use crate::{
-    grammar::{self, NodeTag},
     lexer::{TextLocation, Token},
     parser::{self, Nodes},
-    Parser,
 };
 
 // Choose between std and alloc
@@ -188,17 +184,6 @@ impl<'a> parser::ParseResult<'a> {
     }
 }
 
-impl<'a> Parser<'a> {
-    pub fn new_node_recursive(
-        &mut self,
-        cb: impl FnOnce(Key<NodeTag>) -> grammar::Node<'a>,
-    ) -> Key<NodeTag> {
-        let key = unsafe { self.grammar.nodes.empty_alloc() };
-        *self.grammar.nodes.get_mut_unchecked(&key) = cb(key);
-        key
-    }
-}
-
 impl<'a> Nodes<'a> {
     pub fn stringify(&self, txt: &'a str) -> &'a str {
         match self {
@@ -221,13 +206,12 @@ impl<'a> Nodes<'a> {
 
 pub mod ext {
 
-    use arena::Key;
     use smol_str::SmolStr;
 
     use crate::{
         grammar::{
-            Commands, Comparison, EnumeratorTag, MatchToken, NodeTag, OneOf, Parameters, Rule,
-            VarKind,
+            Commands, Comparison, Enumerator, Grammar, MatchToken, Node, OneOf, Parameters, Rule,
+            VarKind, VariableKind,
         },
         lexer::{ControlTokenKind, TokenKinds},
     };
@@ -252,11 +236,11 @@ pub mod ext {
         MatchToken::Any
     }
 
-    pub fn node(node: Key<NodeTag>) -> MatchToken<'static> {
+    pub fn node<'a>(node: &'a str) -> MatchToken<'a> {
         MatchToken::Node(node)
     }
 
-    pub fn enumerator(enumerator: Key<EnumeratorTag>) -> MatchToken<'static> {
+    pub fn enumerator<'a>(enumerator: &'a str) -> MatchToken<'a> {
         MatchToken::Enumerator(enumerator)
     }
 
@@ -341,9 +325,9 @@ pub mod ext {
         }
     }
 
-    pub fn hard_err() -> Rule<'static> {
+    pub fn commit() -> Rule<'static> {
         Rule::Command {
-            command: Commands::HardError { set: true },
+            command: Commands::Commit { set: true },
         }
     }
 
@@ -400,12 +384,16 @@ pub mod ext {
             self.params([Parameters::Set(var)])
         }
 
-        pub fn hard_err(self) -> Self {
-            self.params([Parameters::HardError(true)])
+        pub fn commit(self) -> Self {
+            self.params([Parameters::Commit(true)])
         }
 
         pub fn print(self, txt: &'a str) -> Self {
             self.params([Parameters::Print(txt)])
+        }
+
+        pub fn hint(self, txt: &'a str) -> Self {
+            self.params([Parameters::Hint(txt)])
         }
 
         pub fn start(self) -> Self {
@@ -421,7 +409,7 @@ pub mod ext {
         }
     }
 
-    pub fn local<'a>(name: &'a str) -> VarKind<'a> {
+    pub const fn local<'a>(name: &'a str) -> VarKind<'a> {
         VarKind::Local(name)
     }
 
@@ -435,6 +423,28 @@ pub mod ext {
 
     pub fn rules<'a>(rules: impl IntoIterator<Item = Rule<'a>>) -> Vec<Rule<'a>> {
         rules.into_iter().collect()
+    }
+
+    pub fn variables<'a>(
+        variables: impl IntoIterator<Item = (&'a str, VariableKind)>,
+    ) -> Vec<(&'a str, VariableKind)> {
+        variables.into_iter().collect()
+    }
+
+    pub fn node_var<'a>(name: &'a str) -> (&'a str, VariableKind) {
+        (name, VariableKind::Node)
+    }
+
+    pub fn list_var<'a>(name: &'a str) -> (&'a str, VariableKind) {
+        (name, VariableKind::NodeList)
+    }
+
+    pub fn number_var<'a>(name: &'a str) -> (&'a str, VariableKind) {
+        (name, VariableKind::Number)
+    }
+
+    pub fn bool_var<'a>(name: &'a str) -> (&'a str, VariableKind) {
+        (name, VariableKind::Boolean)
     }
 
     pub fn option<'a>(matches: MatchToken<'a>) -> OneOf<'a> {
@@ -454,6 +464,125 @@ pub mod ext {
         pub fn params(mut self, params: impl IntoIterator<Item = Parameters<'a>>) -> Self {
             self.parameters = params.into_iter().collect();
             self
+        }
+
+        pub fn set(self, var: VarKind<'a>) -> Self {
+            self.params([Parameters::Set(var)])
+        }
+
+        pub fn commit(self) -> Self {
+            self.params([Parameters::Commit(true)])
+        }
+
+        pub fn print(self, txt: &'a str) -> Self {
+            self.params([Parameters::Print(txt)])
+        }
+
+        pub fn hint(self, txt: &'a str) -> Self {
+            self.params([Parameters::Hint(txt)])
+        }
+
+        pub fn start(self) -> Self {
+            self.params([Parameters::NodeStart])
+        }
+
+        pub fn end(self) -> Self {
+            self.params([Parameters::NodeEnd])
+        }
+
+        pub fn return_node(self) -> Self {
+            self.params([Parameters::Return])
+        }
+    }
+
+    pub struct NodeBuilder<'g, 'a> {
+        grammar: &'g mut Grammar<'a>,
+        pub name: &'a str,
+        pub rules: Vec<Rule<'a>>,
+        pub variables: Vec<(&'a str, VariableKind)>,
+        pub docs: Option<&'a str>,
+    }
+
+    pub struct EnumBuilder<'g, 'a> {
+        grammar: &'g mut Grammar<'a>,
+        pub name: &'a str,
+        pub options: Vec<MatchToken<'a>>,
+    }
+
+    impl<'a> Grammar<'a> {
+        pub fn new_node<'g>(&'g mut self, name: &'a str) -> NodeBuilder<'g, 'a> {
+            NodeBuilder {
+                grammar: self,
+                name,
+                rules: Vec::new(),
+                variables: Vec::new(),
+                docs: None,
+            }
+        }
+
+        pub fn new_enum<'g>(&'g mut self, name: &'a str) -> EnumBuilder<'g, 'a> {
+            EnumBuilder {
+                grammar: self,
+                name,
+                options: Vec::new(),
+            }
+        }
+    }
+
+    impl<'g, 'a> NodeBuilder<'g, 'a> {
+        pub fn name(mut self, name: &'a str) -> Self {
+            self.name = name;
+            self
+        }
+
+        pub fn rules(mut self, rules: impl IntoIterator<Item = Rule<'a>>) -> Self {
+            self.rules.extend(rules);
+            self
+        }
+
+        pub fn variables(
+            mut self,
+            variables: impl IntoIterator<Item = (&'a str, VariableKind)>,
+        ) -> Self {
+            self.variables.extend(variables);
+            self
+        }
+
+        pub fn docs(mut self, text: &'a str) -> Self {
+            self.docs = Some(text);
+            self
+        }
+
+        pub fn build(self) {
+            let node = Node {
+                name: self.name,
+                rules: self.rules,
+                variables: self.variables,
+                docs: self.docs,
+            };
+            self.grammar.add_node(node);
+            // ← mutable borrow of Grammar ends here
+        }
+    }
+
+    impl<'g, 'a> EnumBuilder<'g, 'a> {
+        pub fn name(mut self, name: &'a str) -> Self {
+            self.name = name;
+            self
+        }
+
+        pub fn options(mut self, options: impl IntoIterator<Item = MatchToken<'a>>) -> Self {
+            self.options.extend(options);
+            self
+        }
+
+        pub fn build(self) {
+            let enumerator = Enumerator {
+                name: self.name,
+                values: self.options,
+            };
+            self.grammar.add_enum(enumerator);
+            // ← mutable borrow released
         }
     }
 }

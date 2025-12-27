@@ -1,6 +1,6 @@
 use crate::{lexer::TokenKinds, parser, Map};
 
-use arena::{Arena, Key};
+use serde::Deserialize;
 
 // Choose between std and alloc
 cfg_if::cfg_if! {
@@ -14,19 +14,10 @@ cfg_if::cfg_if! {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct NodeTag;
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct EnumeratorTag;
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct VariableTag;
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct GlobalVariableTag;
-
 #[derive(Debug, Clone)]
 pub struct Grammar<'a> {
-    pub nodes: Arena<Node<'a>, NodeTag>,
-    pub enumerators: Arena<Enumerator<'a>, EnumeratorTag>,
+    pub nodes: Map<String, Node<'a>>,
+    pub enumerators: Map<String, Enumerator<'a>>,
     pub globals: Vec<(&'a str, VariableKind)>,
     /// If true, the parser will throw an error if the last token is not EOF
     pub eof: bool,
@@ -41,15 +32,21 @@ impl<'a> Default for Grammar<'a> {
 impl<'a> Grammar<'a> {
     pub fn new() -> Grammar<'a> {
         Grammar {
-            nodes: Arena::new(),
-            enumerators: Arena::new(),
+            nodes: Map::new(),
+            enumerators: Map::new(),
             globals: Vec::new(),
             eof: true,
         }
     }
 
-    pub fn add_node(&mut self, node: Node<'a>) -> Key<NodeTag> {
-        self.nodes.push(node)
+    pub fn add_node(&mut self, node: Node<'a>) -> bool {
+        self.nodes.insert(node.name.to_string(), node).is_none()
+    }
+
+    pub fn add_enum(&mut self, enumerator: Enumerator<'a>) -> bool {
+        self.enumerators
+            .insert(enumerator.name.to_string(), enumerator)
+            .is_none()
     }
 }
 
@@ -223,7 +220,7 @@ pub enum Commands<'a> {
     Error {
         message: &'a str,
     },
-    HardError {
+    Commit {
         set: bool,
     },
     Goto {
@@ -262,11 +259,11 @@ pub enum MatchToken<'a> {
     /// A token kind
     Token(TokenKinds),
     /// A node name
-    Node(Key<NodeTag>),
+    Node(&'a str),
     /// A constant word
     Word(&'a str),
     /// An enumerator
-    Enumerator(Key<EnumeratorTag>),
+    Enumerator(&'a str),
     /// Any token
     Any,
 }
@@ -326,7 +323,7 @@ pub enum Parameters<'a> {
     /// This is a way of telling the parser that the current node MUST match
     ///
     /// This is useful for using nodes in optional rules
-    HardError(bool),
+    Commit(bool),
     /// Sets the current node to the label with the given name
     Goto(&'a str),
     /// Hints to the parser that the node starts here
@@ -337,6 +334,8 @@ pub enum Parameters<'a> {
     NodeStart,
     /// Hints to the parser that the node ends here
     NodeEnd,
+    /// Display a hint inside an error message
+    Hint(&'a str),
 }
 
 #[derive(Debug, Clone)]
@@ -359,19 +358,58 @@ pub mod validator {
     use smol_str::SmolStr;
 
     use super::*;
-    use crate::lexer::*;
+    use crate::{lexer::*, Parser};
 
-    impl Lexer {
-        pub fn validate_tokens(&self, result: &mut ValidationResult) {
+    #[derive(Copy, Clone, Debug, Default)]
+    pub struct Validator {
+        pub tokens: TokenValidator,
+        pub allow_print: bool,
+        pub allow_debug: bool,
+        pub allow_any: bool,
+        pub allow_back: bool,
+    }
+
+    #[derive(Copy, Clone, Debug)]
+    pub struct TokenValidator {
+        max_chars: usize,
+        alow_numeric: bool,
+        allow_non_ascii: bool,
+        allow_whitespace: bool,
+    }
+
+    impl Default for TokenValidator {
+        fn default() -> Self {
+            Self {
+                max_chars: 3,
+                alow_numeric: false,
+                allow_non_ascii: false,
+                allow_whitespace: false,
+            }
+        }
+    }
+
+    impl Validator {
+        pub fn validate<'a>(&self, parser: &'a Parser<'a>) -> ValidationResult<'a> {
+            let mut result = ValidationResult::new();
+
+            self.validate_tokens(&parser.lexer, &mut result);
+            self.validate_grammar(parser, &mut result);
+
+            result
+        }
+    }
+
+    impl Validator {
+        fn validate_tokens(&self, lexer: &Lexer, result: &mut ValidationResult) {
             let mut tokens: Vec<SmolStr> = Vec::new();
-            for token in &self.token_kinds {
+            for token in &lexer.token_kinds {
                 // tokens that have already been validated can be ignored
                 if tokens.contains(token) {
                     continue;
                 }
                 tokens.push(token.clone());
                 // check for collisions
-                if self.token_kinds.iter().filter(|t| *t == token).count() > 1 {
+                if lexer.token_kinds.iter().filter(|t| *t == token).count() > 1 {
                     result.errors.push(ValidationError {
                         kind: ValidationErrors::TokenCollision(SmolStr::new(token)),
                         node: None,
@@ -386,7 +424,7 @@ pub mod validator {
                 }
                 // check if it starts with a number
                 let first = token.chars().next().unwrap();
-                if first.is_numeric() {
+                if first.is_numeric() && !self.tokens.alow_numeric {
                     result.warnings.push(ValidationWarning {
                         kind: ValidationWarnings::UnusualToken(
                             SmolStr::new(token),
@@ -397,7 +435,7 @@ pub mod validator {
                 }
 
                 // check if it contains a whitespace
-                if token.chars().any(|c| c.is_whitespace()) {
+                if token.chars().any(|c| c.is_whitespace()) && !self.tokens.allow_whitespace {
                     result.warnings.push(ValidationWarning {
                         kind: ValidationWarnings::UnusualToken(
                             SmolStr::new(token),
@@ -407,8 +445,8 @@ pub mod validator {
                     });
                 }
 
-                // check if it is longer than 2 characters
-                if token.len() > 2 {
+                // check if it is longer than 3 characters
+                if token.len() > self.tokens.max_chars {
                     result.warnings.push(ValidationWarning {
                         kind: ValidationWarnings::UnusualToken(
                             SmolStr::new(token),
@@ -419,7 +457,7 @@ pub mod validator {
                 }
 
                 // check if it is not ascii
-                if !token.is_ascii() {
+                if !token.is_ascii() && !self.tokens.allow_non_ascii {
                     result.warnings.push(ValidationWarning {
                         kind: ValidationWarnings::UnusualToken(
                             SmolStr::new(token),
@@ -432,37 +470,36 @@ pub mod validator {
         }
     }
 
-    impl<'a> Grammar<'a> {
+    impl Validator {
         /// Validates the grammar
-        pub fn validate(&'a self, lexer: &Lexer) -> ValidationResult<'a> {
-            let mut result = ValidationResult::new();
-            lexer.validate_tokens(&mut result);
-
-            for node in self.nodes.iter() {
-                self.validate_node(node, lexer, &mut result);
+        pub fn validate_grammar<'a>(
+            &self,
+            parser: &'a Parser<'a>,
+            result: &mut ValidationResult<'a>,
+        ) {
+            for (_, node) in parser.grammar.nodes.iter() {
+                self.validate_node(node, parser, result);
             }
-
-            result
         }
 
-        pub fn validate_node(
+        pub fn validate_node<'a>(
             &self,
             node: &'a Node,
-            lexer: &Lexer,
+            parser: &'a Parser,
             result: &mut ValidationResult<'a>,
         ) {
             let mut laf = LostAndFound::new();
             for rule in &node.rules {
-                self.validate_rule(rule, node, lexer, &mut laf, result);
+                self.validate_rule(rule, node, parser, &mut laf, result);
             }
             laf.pass(result, node);
         }
 
-        pub fn validate_rule(
+        pub fn validate_rule<'a>(
             &self,
             rule: &'a Rule,
             node: &'a Node<'a>,
-            lexer: &Lexer,
+            parser: &'a Parser<'a>,
             laf: &mut LostAndFound<'a>,
             result: &mut ValidationResult<'a>,
         ) {
@@ -472,24 +509,24 @@ pub mod validator {
                     rules,
                     parameters,
                 } => {
-                    self.validate_token(token, node, lexer, laf, result);
-                    self.validate_parameters(parameters, node, laf, result);
-                    self.validate_ruleblock(rules, node, lexer, laf, result)
+                    self.validate_token(token, node, parser, result);
+                    self.validate_parameters(parameters, parser, node, laf, result);
+                    self.validate_ruleblock(rules, node, parser, laf, result)
                 }
                 Rule::Isnt {
                     token,
                     rules,
                     parameters,
                 } => {
-                    self.validate_token(token, node, lexer, laf, result);
-                    self.validate_parameters(parameters, node, laf, result);
-                    self.validate_ruleblock(rules, node, lexer, laf, result)
+                    self.validate_token(token, node, parser, result);
+                    self.validate_parameters(parameters, parser, node, laf, result);
+                    self.validate_ruleblock(rules, node, parser, laf, result)
                 }
                 Rule::IsOneOf { tokens } => {
                     for one_of in tokens {
-                        self.validate_token(&one_of.token, node, lexer, laf, result);
-                        self.validate_parameters(&one_of.parameters, node, laf, result);
-                        self.validate_ruleblock(&one_of.rules, node, lexer, laf, result)
+                        self.validate_token(&one_of.token, node, parser, result);
+                        self.validate_parameters(&one_of.parameters, parser, node, laf, result);
+                        self.validate_ruleblock(&one_of.rules, node, parser, laf, result)
                     }
                 }
                 Rule::Maybe {
@@ -498,10 +535,10 @@ pub mod validator {
                     isnt,
                     parameters,
                 } => {
-                    self.validate_token(token, node, lexer, laf, result);
-                    self.validate_parameters(parameters, node, laf, result);
-                    self.validate_ruleblock(is, node, lexer, laf, result);
-                    self.validate_ruleblock(isnt, node, lexer, laf, result);
+                    self.validate_token(token, node, parser, result);
+                    self.validate_parameters(parameters, parser, node, laf, result);
+                    self.validate_ruleblock(is, node, parser, laf, result);
+                    self.validate_ruleblock(isnt, node, parser, laf, result);
                 }
                 Rule::MaybeOneOf { is_one_of, isnt } => {
                     for OneOf {
@@ -510,36 +547,36 @@ pub mod validator {
                         parameters,
                     } in is_one_of
                     {
-                        self.validate_token(token, node, lexer, laf, result);
-                        self.validate_parameters(parameters, node, laf, result);
-                        self.validate_ruleblock(rules, node, lexer, laf, result);
+                        self.validate_token(token, node, parser, result);
+                        self.validate_parameters(parameters, parser, node, laf, result);
+                        self.validate_ruleblock(rules, node, parser, laf, result);
                     }
-                    self.validate_ruleblock(isnt, node, lexer, laf, result);
+                    self.validate_ruleblock(isnt, node, parser, laf, result);
                 }
                 Rule::While {
                     token,
                     rules,
                     parameters,
                 } => {
-                    self.validate_token(token, node, lexer, laf, result);
-                    self.validate_parameters(parameters, node, laf, result);
-                    self.validate_ruleblock(rules, node, lexer, laf, result)
+                    self.validate_token(token, node, parser, result);
+                    self.validate_parameters(parameters, parser, node, laf, result);
+                    self.validate_ruleblock(rules, node, parser, laf, result)
                 }
-                Rule::Loop { rules } => self.validate_ruleblock(rules, node, lexer, laf, result),
+                Rule::Loop { rules } => self.validate_ruleblock(rules, node, parser, laf, result),
                 Rule::Until {
                     token,
                     rules,
                     parameters,
                 } => {
-                    self.validate_token(token, node, lexer, laf, result);
-                    self.validate_parameters(parameters, node, laf, result);
-                    self.validate_ruleblock(rules, node, lexer, laf, result)
+                    self.validate_token(token, node, parser, result);
+                    self.validate_parameters(parameters, parser, node, laf, result);
+                    self.validate_ruleblock(rules, node, parser, laf, result)
                 }
                 Rule::UntilOneOf { tokens } => {
                     for one_of in tokens {
-                        self.validate_token(&one_of.token, node, lexer, laf, result);
-                        self.validate_parameters(&one_of.parameters, node, laf, result);
-                        self.validate_ruleblock(&one_of.rules, node, lexer, laf, result)
+                        self.validate_token(&one_of.token, node, parser, result);
+                        self.validate_parameters(&one_of.parameters, parser, node, laf, result);
+                        self.validate_ruleblock(&one_of.rules, node, parser, laf, result)
                     }
                 }
                 Rule::Command { command } => match command {
@@ -569,7 +606,8 @@ pub mod validator {
                                 }
                             }
                             Global(gl) => {
-                                match self
+                                match parser
+                                    .grammar
                                     .globals
                                     .iter()
                                     .find(|(id, _)| id == gl)
@@ -605,7 +643,8 @@ pub mod validator {
                                 }
                             }
                             Global(gr) => {
-                                match self
+                                match parser
+                                    .grammar
                                     .globals
                                     .iter()
                                     .find(|(id, _)| id == gr)
@@ -641,11 +680,11 @@ pub mod validator {
                             }),
                         }
                         for rule in rules {
-                            self.validate_rule(rule, node, lexer, laf, result);
+                            self.validate_rule(rule, node, parser, laf, result);
                         }
                     }
                     Commands::Error { message: _ } => (),
-                    Commands::HardError { set: _ } => (),
+                    Commands::Commit { set: _ } => (),
                     Commands::Goto { label } => {
                         laf.lost_labels.push(label);
                     }
@@ -675,33 +714,32 @@ pub mod validator {
             }
         }
 
-        pub fn validate_ruleblock(
+        pub fn validate_ruleblock<'a>(
             &self,
             ruleblock: &'a Vec<Rule<'a>>,
             node: &'a Node<'a>,
-            lexer: &Lexer,
+            parser: &'a Parser,
             laf: &mut LostAndFound<'a>,
             result: &mut ValidationResult<'a>,
         ) {
             let steps = laf.steps;
             for rule in ruleblock {
                 laf.steps += 1;
-                self.validate_rule(rule, node, lexer, laf, result);
+                self.validate_rule(rule, node, parser, laf, result);
             }
             laf.steps = steps;
         }
 
-        pub fn validate_token(
+        pub fn validate_token<'a>(
             &self,
             token: &'a MatchToken,
             node: &'a Node<'a>,
-            lexer: &Lexer,
-            _laf: &mut LostAndFound,
+            parser: &'a Parser<'a>,
             result: &mut ValidationResult<'a>,
         ) {
             match token {
                 MatchToken::Node(_name) => {
-                    // if !self.nodes.get(name).is_some() {
+                    // if !parser.grammar.nodes.get(name).is_some() {
                     //     result.errors.push(ValidationError {
                     //         kind: ValidationErrors::NodeNotFound(&name),
                     //         node: Some(&node),
@@ -730,7 +768,7 @@ pub mod validator {
                             return;
                         }
                         // check if token is in the lexer
-                        if !lexer.token_kinds.iter().any(|k| k == txt) {
+                        if !parser.lexer.token_kinds.iter().any(|k| k == txt) {
                             result.errors.push(ValidationError {
                                 kind: ValidationErrors::TokenNotFound(txt.clone()),
                                 node: Some(node),
@@ -742,35 +780,38 @@ pub mod validator {
             }
         }
 
-        pub fn validate_parameters(
+        pub fn validate_parameters<'a>(
             &self,
             parameters: &Vec<Parameters<'a>>,
+            parser: &'a Parser<'a>,
             node: &'a Node<'a>,
             laf: &mut LostAndFound<'a>,
             result: &mut ValidationResult<'a>,
         ) {
             for parameter in parameters {
                 match parameter {
-                    Parameters::Set(name) => match name.kind(&node.variables, &self.globals) {
-                        Some(var) => match var {
-                            VariableKind::Node => (),
-                            VariableKind::NodeList => (),
-                            VariableKind::Boolean | VariableKind::Number => {
+                    Parameters::Set(name) => {
+                        match name.kind(&node.variables, &parser.grammar.globals) {
+                            Some(var) => match var {
+                                VariableKind::Node => (),
+                                VariableKind::NodeList => (),
+                                VariableKind::Boolean | VariableKind::Number => {
+                                    result.errors.push(ValidationError {
+                                        kind: ValidationErrors::CantUseVariable(*name),
+                                        node: Some(node),
+                                    })
+                                }
+                            },
+                            None => {
                                 result.errors.push(ValidationError {
-                                    kind: ValidationErrors::CantUseVariable(*name),
+                                    kind: ValidationErrors::VariableNotFound(*name),
                                     node: Some(node),
-                                })
+                                });
                             }
-                        },
-                        None => {
-                            result.errors.push(ValidationError {
-                                kind: ValidationErrors::VariableNotFound(*name),
-                                node: Some(node),
-                            });
                         }
-                    },
+                    }
                     Parameters::Increment(name) => {
-                        match name.kind(&node.variables, &self.globals) {
+                        match name.kind(&node.variables, &parser.grammar.globals) {
                             Some(var) => match var {
                                 VariableKind::Number => (),
                                 VariableKind::Node
@@ -789,7 +830,7 @@ pub mod validator {
                         }
                     }
                     Parameters::Decrement(name) => {
-                        match name.kind(&node.variables, &self.globals) {
+                        match name.kind(&node.variables, &parser.grammar.globals) {
                             Some(var) => match var {
                                 VariableKind::Number => (),
                                 VariableKind::Node
@@ -807,49 +848,55 @@ pub mod validator {
                             }
                         }
                     }
-                    Parameters::True(name) => match name.kind(&node.variables, &self.globals) {
-                        Some(var) => match var {
-                            VariableKind::Boolean => (),
-                            VariableKind::Node | VariableKind::NodeList | VariableKind::Number => {
-                                result.errors.push(ValidationError {
+                    Parameters::True(name) => {
+                        match name.kind(&node.variables, &parser.grammar.globals) {
+                            Some(var) => match var {
+                                VariableKind::Boolean => (),
+                                VariableKind::Node
+                                | VariableKind::NodeList
+                                | VariableKind::Number => result.errors.push(ValidationError {
                                     kind: ValidationErrors::CantUseVariable(*name),
                                     node: Some(node),
-                                })
-                            }
-                        },
-                        None => {
-                            result.errors.push(ValidationError {
-                                kind: ValidationErrors::VariableNotFound(*name),
-                                node: Some(node),
-                            });
-                        }
-                    },
-                    Parameters::False(name) => match name.kind(&node.variables, &self.globals) {
-                        Some(var) => match var {
-                            VariableKind::Boolean => (),
-                            VariableKind::Node | VariableKind::NodeList | VariableKind::Number => {
+                                }),
+                            },
+                            None => {
                                 result.errors.push(ValidationError {
+                                    kind: ValidationErrors::VariableNotFound(*name),
+                                    node: Some(node),
+                                });
+                            }
+                        }
+                    }
+                    Parameters::False(name) => {
+                        match name.kind(&node.variables, &parser.grammar.globals) {
+                            Some(var) => match var {
+                                VariableKind::Boolean => (),
+                                VariableKind::Node
+                                | VariableKind::NodeList
+                                | VariableKind::Number => result.errors.push(ValidationError {
                                     kind: ValidationErrors::CantUseVariable(*name),
                                     node: Some(node),
-                                })
+                                }),
+                            },
+                            None => {
+                                result.errors.push(ValidationError {
+                                    kind: ValidationErrors::VariableNotFound(*name),
+                                    node: Some(node),
+                                });
                             }
-                        },
-                        None => {
-                            result.errors.push(ValidationError {
-                                kind: ValidationErrors::VariableNotFound(*name),
-                                node: Some(node),
-                            });
                         }
-                    },
+                    }
                     Parameters::Print(_) => {
-                        result.warnings.push(ValidationWarning {
-                            kind: ValidationWarnings::UsedPrint,
-                            node: Some(node),
-                        });
+                        if !self.allow_print {
+                            result.warnings.push(ValidationWarning {
+                                kind: ValidationWarnings::UsedPrint,
+                                node: Some(node),
+                            });
+                        }
                     }
                     Parameters::Debug(name) => {
                         if let Some(name) = name {
-                            match name.kind(&node.variables, &self.globals) {
+                            match name.kind(&node.variables, &parser.grammar.globals) {
                                 Some(_) => (),
                                 None => {
                                     result.errors.push(ValidationError {
@@ -859,16 +906,20 @@ pub mod validator {
                                 }
                             }
                         }
-                        result.warnings.push(ValidationWarning {
-                            kind: ValidationWarnings::UsedDebug,
-                            node: Some(node),
-                        });
+                        if !self.allow_debug {
+                            result.warnings.push(ValidationWarning {
+                                kind: ValidationWarnings::UsedDebug,
+                                node: Some(node),
+                            });
+                        }
                     }
                     Parameters::Back(n) => {
-                        result.warnings.push(ValidationWarning {
-                            kind: ValidationWarnings::UsedDepricated(Depricated::Back),
-                            node: Some(node),
-                        });
+                        if !self.allow_back {
+                            result.warnings.push(ValidationWarning {
+                                kind: ValidationWarnings::UsedDepricated(Depricated::Back),
+                                node: Some(node),
+                            });
+                        }
                         if *n as usize > laf.steps {
                             result.errors.push(ValidationError {
                                 kind: ValidationErrors::CannotGoBackMoreThan {
@@ -881,12 +932,13 @@ pub mod validator {
                     }
                     Parameters::Return => (),
                     Parameters::Break(_) => (),
-                    Parameters::HardError(_) => (),
+                    Parameters::Commit(_) => (),
                     Parameters::Goto(label) => {
                         laf.lost_labels.push(label);
                     }
                     Parameters::NodeStart => (),
                     Parameters::NodeEnd => (),
+                    Parameters::Hint(_) => (),
                 }
             }
         }
@@ -973,7 +1025,7 @@ pub mod validator {
 
     #[derive(Debug, Clone)]
     pub enum ValidationWarnings<'a> {
-        UnusedVariable(Key<VariableTag>),
+        UnusedVariable(&'a str),
         UsedDebug,
         UsedPrint,
         UsedDepricated(Depricated),
@@ -1057,16 +1109,18 @@ pub mod validator {
         fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
             match self {
                 ValidationWarnings::UnusedVariable(key) => write!(f, "Unused variable {:?}", key),
-                ValidationWarnings::UsedDebug => write!(f, "Used debug"),
-                ValidationWarnings::UsedPrint => write!(f, "Used print"),
+                ValidationWarnings::UsedDebug => {
+                    write!(f, "Debug should only be used in development")
+                }
+                ValidationWarnings::UsedPrint => {
+                    write!(f, "Print should only be used in development")
+                }
                 ValidationWarnings::UsedDepricated(depricated) => {
                     write!(f, "Used depricated feature {:?}", depricated)
                 }
-                ValidationWarnings::UnusualToken(smol_str, token_errors) => write!(
-                    f,
-                    "Used unusual token ({smol_str}), reason: {:?}",
-                    token_errors
-                ),
+                ValidationWarnings::UnusualToken(smol_str, token_errors) => {
+                    write!(f, "Used unusual token ({smol_str}), {:?}", token_errors)
+                }
                 ValidationWarnings::UnusedLabel(label) => {
                     write!(f, "Label declared but never used: {}", label)
                 }
@@ -1112,6 +1166,35 @@ pub mod validator {
                 ValidationErrors::VariableNotFound(var_kind) => {
                     write!(f, "Variable {var_kind:?} not found")
                 }
+            }
+        }
+    }
+
+    impl<'a> ValidationErrors<'a> {
+        pub fn id_and_header(&self) -> (&'static str, &'static str) {
+            match self {
+                ValidationErrors::CantUseVariable(_) => ("100", "Variable usage invalid"),
+                ValidationErrors::ComparisonInvalid(_, _, _) => ("101", "Comparison invalid"),
+                ValidationErrors::VariableNotFound(_) => ("102", "Variable not found"),
+                ValidationErrors::EmptyToken => ("103", "Empty token invalid"),
+                ValidationErrors::TokenNotFound(_) => ("104", "Token not found"),
+                ValidationErrors::DuplicateLabel(_) => ("105", "Duplicate label"),
+                ValidationErrors::LabelNotFound(_) => ("106", "Label not found"),
+                ValidationErrors::TokenCollision(_) => ("107", "Duplicate token"),
+                ValidationErrors::CannotGoBackMoreThan { .. } => ("108", "Out of scope"),
+            }
+        }
+    }
+
+    impl<'a> ValidationWarnings<'a> {
+        pub fn id_and_header(&self) -> (&'static str, &'static str) {
+            match self {
+                ValidationWarnings::UnusedVariable(_) => ("000", "Variable unused"),
+                ValidationWarnings::UsedDebug => ("001", "Used debug"),
+                ValidationWarnings::UsedPrint => ("002", "Used print"),
+                ValidationWarnings::UsedDepricated(_) => ("003", "Feature depricated"),
+                ValidationWarnings::UnusualToken(_, _) => ("004", "Unusual token"),
+                ValidationWarnings::UnusedLabel(_) => ("005", "Label unused"),
             }
         }
     }
