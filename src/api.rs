@@ -289,15 +289,18 @@ pub mod ext {
         Rule::Loop { rules: Vec::new() }
     }
 
-    pub fn maybe_one_of<'a>(options: Vec<OneOf<'a>>) -> Rule<'a> {
+    pub fn maybe_one_of<'a>(options: impl IntoIterator<Item = OneOf<'a>>) -> Rule<'a> {
         Rule::MaybeOneOf {
-            is_one_of: options,
+            is_one_of: options.into_iter().collect(),
             isnt: Vec::new(),
         }
     }
 
-    pub fn is_one_of<'a>(options: Vec<OneOf<'a>>) -> Rule<'a> {
-        Rule::IsOneOf { tokens: options }
+    pub fn is_one_of<'a>(options: impl IntoIterator<Item = OneOf<'a>>) -> Rule<'a> {
+        Rule::IsOneOf {
+            tokens: options.into_iter().collect(),
+            parameters: Vec::new(),
+        }
     }
 
     pub fn until<'a>(matches: MatchToken<'a>) -> Rule<'a> {
@@ -350,7 +353,9 @@ pub mod ext {
                     parameters.extend(params);
                 }
                 Rule::Maybe { parameters, .. } => parameters.extend(params),
-                Rule::While { parameters, .. } | Rule::Until { parameters, .. } => {
+                Rule::While { parameters, .. }
+                | Rule::Until { parameters, .. }
+                | Rule::IsOneOf { parameters, .. } => {
                     parameters.extend(params);
                 }
                 _ => panic!("Can not set params for rule: {:?}", self),
@@ -553,15 +558,15 @@ pub mod ext {
             self
         }
 
-        pub fn build(self) {
-            let node = Node {
+        pub fn build(self) -> MatchToken<'a> {
+            let n = Node {
                 name: self.name,
                 rules: self.rules,
                 variables: self.variables,
                 docs: self.docs,
             };
-            self.grammar.add_node(node);
-            // ← mutable borrow of Grammar ends here
+            self.grammar.add_node(n);
+            node(self.name)
         }
     }
 
@@ -576,13 +581,13 @@ pub mod ext {
             self
         }
 
-        pub fn build(self) {
-            let enumerator = Enumerator {
+        pub fn build(self) -> MatchToken<'a> {
+            let e = Enumerator {
                 name: self.name,
                 values: self.options,
             };
-            self.grammar.add_enum(enumerator);
-            // ← mutable borrow released
+            self.grammar.add_enum(e);
+            enumerator(self.name)
         }
     }
 }

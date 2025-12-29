@@ -85,6 +85,7 @@ pub enum Rule<'a> {
     /// If none of the tokens is matched, the node will end with an error
     IsOneOf {
         tokens: Vec<OneOf<'a>>,
+        parameters: Vec<Parameters<'a>>,
     },
     /// Matches a token
     ///
@@ -531,12 +532,13 @@ pub mod validator {
                     self.validate_parameters(parameters, parser, node, laf, result);
                     self.validate_ruleblock(rules, node, parser, laf, result)
                 }
-                Rule::IsOneOf { tokens } => {
+                Rule::IsOneOf { tokens, parameters } => {
                     for one_of in tokens {
                         self.validate_token(&one_of.token, node, parser, result);
                         self.validate_parameters(&one_of.parameters, parser, node, laf, result);
                         self.validate_ruleblock(&one_of.rules, node, parser, laf, result)
                     }
+                    self.validate_parameters(parameters, parser, node, laf, result);
                 }
                 Rule::Maybe {
                     token,
@@ -708,14 +710,16 @@ pub mod validator {
                     }
                     Commands::Print { message: _ } => (),
                 },
-                Rule::Debug { target } => if let Some(name) = target {
-                    if !name.validate(&node.variables, &parser.grammar.globals) {
-                        result.errors.push(ValidationError {
-                            kind: ValidationErrors::VariableNotFound(*name),
-                            node: Some(node),
-                        });
+                Rule::Debug { target } => {
+                    if let Some(name) = target {
+                        if !name.validate(&node.variables, &parser.grammar.globals) {
+                            result.errors.push(ValidationError {
+                                kind: ValidationErrors::VariableNotFound(*name),
+                                node: Some(node),
+                            });
+                        }
                     }
-                },
+                }
             }
         }
 

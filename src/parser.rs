@@ -3,7 +3,6 @@ use crate::{
     Map,
 };
 
-
 use crate::{
     grammar::{self, Grammar, MatchToken, OneOf},
     lexer::{Lexer, TextLocation, Token, TokenKinds},
@@ -308,7 +307,7 @@ impl<'a> Parser<'a> {
                 grammar::Rule::Isnt {
                     token,
                     rules,
-                    parameters: _,
+                    parameters,
                 } => {
                     match self.match_token(
                         grammar,
@@ -328,7 +327,7 @@ impl<'a> Parser<'a> {
                                 cursor_clone,
                                 &tokens[cursor.idx].location,
                                 Some(node.clone()),
-                                None,
+                                Some(&parameters),
                             )?;
                         }
                         TokenCompare::IsNot(_) => {
@@ -347,7 +346,10 @@ impl<'a> Parser<'a> {
                         }
                     }
                 }
-                grammar::Rule::IsOneOf { tokens: pos_tokens } => {
+                grammar::Rule::IsOneOf {
+                    tokens: pos_tokens,
+                    parameters,
+                } => {
                     let mut found = false;
                     for OneOf {
                         token,
@@ -427,7 +429,7 @@ impl<'a> Parser<'a> {
                             cursor_clone,
                             &tokens[cursor.idx].location,
                             Some(node.clone()),
-                            None,
+                            Some(&parameters),
                         )?;
                     }
                 }
