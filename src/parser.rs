@@ -1005,6 +1005,12 @@ impl<'a> Parser<'a> {
     ) -> Result<TokenCompare<'a>, ParseError<'a>> {
         match token {
             grammar::MatchToken::Token(tok) => {
+                if tok.is_whitespace() {
+                    let current = &tokens[cursor.idx];
+                    while cursor.idx > 0 && tokens[cursor.idx - 1].kind.is_whitespace() {
+                        todo!("need to correctly handle matching whitespace")
+                    }
+                }
                 if *tok == TokenKinds::Control(crate::lexer::ControlTokenKind::Eof)
                     && cursor.idx >= tokens.len()
                 {

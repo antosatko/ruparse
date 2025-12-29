@@ -51,11 +51,17 @@ impl<'a> ParseError<'a> {
     ) -> std::result::Result<(), std::fmt::Error> {
         let (id, header) = self.kind.id_and_header();
         let span = self.location.index..self.location.index + self.location.len;
-        let mut snippet = Snippet::source(txt).annotation(
-            AnnotationKind::Primary
-                .span(span)
-                .label(format!("{:?}", self.kind)),
-        );
+        let mut snippet = Snippet::source(txt)
+            .annotation(
+                AnnotationKind::Primary
+                    .span(span)
+                    .label(format!("{:?}", self.kind)),
+            )
+            // .annotation(
+            //     AnnotationKind::Visible
+            //         .span(self.location.index - 5..self.location.index + self.location.len),
+            // )
+            .fold(true);
         if let Some(file) = filename {
             snippet = snippet.path(file);
         }
