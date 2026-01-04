@@ -247,7 +247,7 @@ impl<'a> Parser<'a> {
             #[cfg(feature = "debug")]
             println!(
                 "tok: <{}> kind: {:?} -- parent: {}",
-                lexer.stringify(&tokens[cursor.idx], text),
+                &tokens[cursor.idx].stringify(text),
                 tokens[cursor.idx].kind,
                 node.name
             );
@@ -1005,12 +1005,12 @@ impl<'a> Parser<'a> {
     ) -> Result<TokenCompare<'a>, ParseError<'a>> {
         match token {
             grammar::MatchToken::Token(tok) => {
-                if tok.is_whitespace() {
-                    let current = &tokens[cursor.idx];
-                    while cursor.idx > 0 && tokens[cursor.idx - 1].kind.is_whitespace() {
-                        todo!("need to correctly handle matching whitespace")
-                    }
-                }
+                // if tok.is_whitespace() {
+                //     let current = &tokens[cursor.idx];
+                //     while cursor.idx > 0 && tokens[cursor.idx - 1].kind.is_whitespace() {
+                //         todo!("need to correctly handle matching whitespace")
+                //     }
+                // }
                 if *tok == TokenKinds::Control(crate::lexer::ControlTokenKind::Eof)
                     && cursor.idx >= tokens.len()
                 {
@@ -1030,12 +1030,14 @@ impl<'a> Parser<'a> {
                     }));
                 }
                 let mut current_token = &tokens[cursor.idx];
+                let mut peek = 0;
                 while current_token.kind.is_whitespace() {
                     if *tok == current_token.kind {
+                        cursor.idx += peek;
                         return Ok(TokenCompare::Is(Nodes::Token(current_token.clone())));
                     }
-                    cursor.idx += 1;
-                    current_token = &tokens[cursor.idx];
+                    peek += 1;
+                    current_token = &tokens[cursor.idx + peek];
                 }
                 if *tok != current_token.kind {
                     return Ok(TokenCompare::IsNot(ParseError {
@@ -1049,6 +1051,7 @@ impl<'a> Parser<'a> {
                         // hint,
                     }));
                 }
+                cursor.idx += peek;
                 Ok(TokenCompare::Is(Nodes::Token(current_token.clone())))
             }
             grammar::MatchToken::Node(node_name) => {
@@ -1062,11 +1065,14 @@ impl<'a> Parser<'a> {
             }
             grammar::MatchToken::Word(word) => {
                 let mut current_token = &tokens[cursor.idx];
+                let mut peek = 0;
                 while current_token.kind.is_whitespace() {
-                    cursor.idx += 1;
-                    current_token = &tokens[cursor.idx];
+                    peek += 1;
+                    current_token = &tokens[cursor.idx + peek];
                 }
-                if let TokenKinds::Text = current_token.kind {
+                if !matches!(current_token.kind, TokenKinds::Text)
+                    || word != &current_token.stringify(text)
+                {
                     if word != &current_token.stringify(text) {
                         return Ok(TokenCompare::IsNot(ParseError {
                             kind: ParseErrors::ExpectedWord {
@@ -1078,22 +1084,11 @@ impl<'a> Parser<'a> {
                             hint: Self::find_hint(parameters),
                         }));
                     }
-                } else {
-                    return Ok(TokenCompare::IsNot(ParseError {
-                        kind: ParseErrors::ExpectedWord {
-                            expected: word.to_string(),
-                            found: current_token.kind.clone(),
-                        },
-                        location: current_token.location,
-                        node: None,
-                        hint: Self::find_hint(parameters),
-                    }));
                 }
+                cursor.idx += peek;
                 Ok(TokenCompare::Is(Nodes::Token(current_token.clone())))
             }
             grammar::MatchToken::Enumerator(enumerator) => {
-                #[cfg(feature = "debug")]
-                println!("got: {}", grammar.enumerators.get(enumerator).is_some());
                 let enumerator = match grammar.enumerators.get(*enumerator) {
                     Some(enumerator) => enumerator,
                     None => {
