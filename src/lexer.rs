@@ -43,7 +43,7 @@ pub enum ControlTokenKind {
     Eol,
 }
 
-pub type Preprocessor = fn(text: &str, tokens: Vec<Token>) -> Result<Vec<Token>, PreprocessorError>;
+pub type Preprocessor = fn(text: &str, tokens: &[Token]) -> Result<Vec<Token>, PreprocessorError>;
 
 pub struct PreprocessorError {
     pub message: String,
@@ -299,7 +299,7 @@ impl Lexer {
         });
 
         for preprocessor in &self.preprocessors {
-            tokens = preprocessor(text, tokens)?;
+            tokens = preprocessor(text, &tokens)?;
         }
 
         Ok(tokens)
@@ -403,7 +403,7 @@ impl Lexer {
         });
 
         for preprocessor in &self.preprocessors {
-            tokens = preprocessor(text, tokens)?;
+            tokens = preprocessor(text, &tokens)?;
         }
 
         Ok(tokens)
