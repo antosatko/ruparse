@@ -389,6 +389,18 @@ pub mod ext {
             self.params([Parameters::Set(var)])
         }
 
+        pub fn clone(self, src: VarKind<'a>, dst: VarKind<'a>) -> Self {
+            self.params([Parameters::Clone(src, dst)])
+        }
+
+        pub fn debug_var(self, var: VarKind<'a>) -> Self {
+            self.params([Parameters::Debug(Some(var))])
+        }
+
+        pub fn debug_token(self) -> Self {
+            self.params([Parameters::Debug(None)])
+        }
+
         pub fn commit(self) -> Self {
             self.params([Parameters::Commit(true)])
         }
@@ -473,6 +485,18 @@ pub mod ext {
 
         pub fn set(self, var: VarKind<'a>) -> Self {
             self.params([Parameters::Set(var)])
+        }
+
+        pub fn debug_var(self, var: VarKind<'a>) -> Self {
+            self.params([Parameters::Debug(Some(var))])
+        }
+
+        pub fn debug_token(self) -> Self {
+            self.params([Parameters::Debug(None)])
+        }
+
+        pub fn clone(self, src: VarKind<'a>, dst: VarKind<'a>) -> Self {
+            self.params([Parameters::Clone(src, dst)])
         }
 
         pub fn commit(self) -> Self {
