@@ -793,6 +793,13 @@ impl<'a> Parser<'a> {
                         #[cfg(feature = "std")]
                         println!("{}", _msg)
                     }
+                    grammar::Commands::Return => {
+                        msg_bus.send(Msg::Return);
+                    }
+                    grammar::Commands::Start => node.first_string_idx = tokens[cursor.idx].index,
+                    grammar::Commands::End => {
+                        node.last_string_idx = tokens[cursor.idx].index + tokens[cursor.idx].len
+                    }
                 },
                 grammar::Rule::Loop { rules } => {
                     self.parse_rules(
@@ -1190,7 +1197,7 @@ impl<'a> Parser<'a> {
                         #[cfg(feature = "std")]
                         {
                             let kind = _ident.get(&node.variables, globals);
-                            println!("{:?}", kind);
+                            println!("{:?}", kind.map(|k| k.stringify(text)));
                         }
                     }
                     None =>
@@ -1257,7 +1264,7 @@ impl<'a> Parser<'a> {
                         });
                     }
                 }
-                grammar::Parameters::Clone(var1, var2) => {
+                grammar::Parameters::CloneValue(var1, var2) => {
                     var2.set(var1, &mut node.variables, globals);
                 }
                 grammar::Parameters::Commit(value) => {
@@ -1558,6 +1565,16 @@ impl<'a> VariableKind<'a> {
         match self {
             VariableKind::Number(val) => val,
             _ => panic!("unwrap_number called on {:#?}", self),
+        }
+    }
+
+    pub fn stringify(&self, text: &'a str) -> String {
+        match self {
+            VariableKind::Node(Some(nodes)) => nodes.stringify(text).to_string(),
+            VariableKind::NodeList(items) => format!("Nodes len: {}", items.len()),
+            VariableKind::Boolean(v) => v.to_string(),
+            VariableKind::Number(v) => v.to_string(),
+            VariableKind::Node(None) => String::from("None"),
         }
     }
 }

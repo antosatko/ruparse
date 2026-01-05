@@ -346,6 +346,24 @@ pub mod ext {
         }
     }
 
+    pub fn return_node<'a>() -> Rule<'a> {
+        Rule::Command {
+            command: Commands::Return,
+        }
+    }
+
+    pub fn start<'a>() -> Rule<'a> {
+        Rule::Command {
+            command: Commands::Start,
+        }
+    }
+
+    pub fn end<'a>() -> Rule<'a> {
+        Rule::Command {
+            command: Commands::End,
+        }
+    }
+
     impl<'a> Rule<'a> {
         pub fn params(mut self, params: impl IntoIterator<Item = Parameters<'a>>) -> Self {
             match &mut self {
@@ -389,8 +407,16 @@ pub mod ext {
             self.params([Parameters::Set(var)])
         }
 
-        pub fn clone(self, src: VarKind<'a>, dst: VarKind<'a>) -> Self {
-            self.params([Parameters::Clone(src, dst)])
+        pub fn inc(self, var: VarKind<'a>) -> Self {
+            self.params([Parameters::Increment(var)])
+        }
+
+        pub fn dec(self, var: VarKind<'a>) -> Self {
+            self.params([Parameters::Decrement(var)])
+        }
+
+        pub fn clone_value(self, src: VarKind<'a>, dst: VarKind<'a>) -> Self {
+            self.params([Parameters::CloneValue(src, dst)])
         }
 
         pub fn debug_var(self, var: VarKind<'a>) -> Self {
@@ -495,8 +521,8 @@ pub mod ext {
             self.params([Parameters::Debug(None)])
         }
 
-        pub fn clone(self, src: VarKind<'a>, dst: VarKind<'a>) -> Self {
-            self.params([Parameters::Clone(src, dst)])
+        pub fn clone_value(self, src: VarKind<'a>, dst: VarKind<'a>) -> Self {
+            self.params([Parameters::CloneValue(src, dst)])
         }
 
         pub fn commit(self) -> Self {

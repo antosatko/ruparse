@@ -260,6 +260,9 @@ pub enum Commands<'a> {
     Print {
         message: &'a str,
     },
+    Return,
+    Start,
+    End,
 }
 
 /// Comparison operators
@@ -336,7 +339,7 @@ pub enum Parameters<'a> {
     /// Sets a variable to false
     False(VarKind<'a>),
     /// Clones contents of first variable to the second
-    Clone(VarKind<'a>, VarKind<'a>),
+    CloneValue(VarKind<'a>, VarKind<'a>),
     /// Prints string
     Print(&'a str),
     /// Prints current token or variable
@@ -390,7 +393,7 @@ pub mod validator {
     use super::*;
     use crate::{lexer::*, Parser};
 
-    #[derive(Copy, Clone, Debug, Default)]
+    #[derive(Copy, Clone, Debug)]
     pub struct Validator {
         pub tokens: TokenValidator,
         pub allow_print: bool,
@@ -405,6 +408,18 @@ pub mod validator {
         alow_numeric: bool,
         allow_non_ascii: bool,
         allow_whitespace: bool,
+    }
+
+    impl Default for Validator {
+        fn default() -> Self {
+            Self {
+                tokens: Default::default(),
+                allow_print: Default::default(),
+                allow_debug: Default::default(),
+                allow_any: true,
+                allow_back: Default::default(),
+            }
+        }
     }
 
     impl Default for TokenValidator {
@@ -729,6 +744,9 @@ pub mod validator {
                         laf.found_labels.push(name);
                     }
                     Commands::Print { message: _ } => (),
+                    Commands::Return => (),
+                    Commands::Start => (),
+                    Commands::End => (),
                 },
                 Rule::Debug { target } => {
                     if let Some(name) = target {
@@ -783,10 +801,14 @@ pub mod validator {
                         });
                     }
                 }
-                MatchToken::Any => result.warnings.push(ValidationWarning {
-                    kind: ValidationWarnings::UsedDepricated(Depricated::Any),
-                    node: Some(node),
-                }),
+                MatchToken::Any => {
+                    if !self.allow_any {
+                        result.warnings.push(ValidationWarning {
+                            kind: ValidationWarnings::UsedDepricated(Depricated::Any),
+                            node: Some(node),
+                        })
+                    }
+                }
                 MatchToken::Token(kind) => {
                     if let TokenKinds::Token(txt) = kind {
                         if txt.is_empty() {
@@ -968,7 +990,7 @@ pub mod validator {
                     Parameters::NodeStart => (),
                     Parameters::NodeEnd => (),
                     Parameters::Hint(_) => (),
-                    Parameters::Clone(var1, var2) => {
+                    Parameters::CloneValue(var1, var2) => {
                         match (
                             var1.kind(&node.variables, &parser.grammar.globals),
                             var2.kind(&node.variables, &parser.grammar.globals),
