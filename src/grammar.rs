@@ -200,6 +200,24 @@ impl<'a> VarKind<'a> {
         }
     }
 
+    pub fn set(
+        &self,
+        other: &Self,
+        locals: &mut Map<String, parser::VariableKind<'a>>,
+        globals: &mut Map<String, parser::VariableKind<'a>>,
+    ) {
+        let value = match other {
+            VarKind::Local(v) => locals.get(*v),
+            VarKind::Global(v) => globals.get(*v),
+        }
+        .cloned()
+        .expect("variable other not found");
+        let self_mut = self
+            .get_mut(locals, globals)
+            .expect("variable self not found");
+        *self_mut = value;
+    }
+
     pub fn validate<'b>(
         &self,
         locals: &[(&'a str, VariableKind)],
@@ -317,6 +335,8 @@ pub enum Parameters<'a> {
     True(VarKind<'a>),
     /// Sets a variable to false
     False(VarKind<'a>),
+    /// Clones contents of first variable to the second
+    Clone(VarKind<'a>, VarKind<'a>),
     /// Prints string
     Print(&'a str),
     /// Prints current token or variable
@@ -948,6 +968,39 @@ pub mod validator {
                     Parameters::NodeStart => (),
                     Parameters::NodeEnd => (),
                     Parameters::Hint(_) => (),
+                    Parameters::Clone(var1, var2) => {
+                        match (
+                            var1.kind(&node.variables, &parser.grammar.globals),
+                            var2.kind(&node.variables, &parser.grammar.globals),
+                        ) {
+                            (Some(t1), Some(t2)) if t1 == t2 => (),
+                            (Some(t1), Some(t2)) => result.errors.push(ValidationError {
+                                kind: ValidationErrors::VariableTypeMismatch(
+                                    (*var1, t1),
+                                    (*var2, t2),
+                                ),
+                                node: Some(node),
+                            }),
+                            (Some(_), None) => result.errors.push(ValidationError {
+                                kind: ValidationErrors::VariableNotFound(*var2),
+                                node: Some(node),
+                            }),
+                            (None, Some(_)) => result.errors.push(ValidationError {
+                                kind: ValidationErrors::VariableNotFound(*var1),
+                                node: Some(node),
+                            }),
+                            (None, None) => {
+                                result.errors.push(ValidationError {
+                                    kind: ValidationErrors::VariableNotFound(*var1),
+                                    node: Some(node),
+                                });
+                                result.errors.push(ValidationError {
+                                    kind: ValidationErrors::VariableNotFound(*var2),
+                                    node: Some(node),
+                                })
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1026,6 +1079,7 @@ pub mod validator {
         EnumeratorNotFound(&'a str),
         TokenCollision(SmolStr),
         CannotGoBackMoreThan { steps: usize, max: usize },
+        VariableTypeMismatch((VarKind<'a>, VariableKind), (VarKind<'a>, VariableKind)),
     }
 
     #[derive(Debug, Clone)]
@@ -1181,6 +1235,10 @@ pub mod validator {
                 ValidationErrors::EnumeratorNotFound(name) => {
                     write!(f, "Enumerator {name:?} not found")
                 }
+                ValidationErrors::VariableTypeMismatch((var1, t1), (var2, t2)) => write!(
+                    f,
+                    "Variable type mismatch for {var1:?}:{t1:?}, {var2:?}:{t2:?}"
+                ),
             }
         }
     }
@@ -1199,6 +1257,7 @@ pub mod validator {
                 ValidationErrors::CannotGoBackMoreThan { .. } => ("108", "Out of scope"),
                 ValidationErrors::NodeNotFound(_) => ("106", "Node not found"),
                 ValidationErrors::EnumeratorNotFound(_) => ("106", "Enumerator not found"),
+                ValidationErrors::VariableTypeMismatch(_, _) => ("108", "Variable type mismatch"),
             }
         }
     }

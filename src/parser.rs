@@ -1257,6 +1257,9 @@ impl<'a> Parser<'a> {
                         });
                     }
                 }
+                grammar::Parameters::Clone(var1, var2) => {
+                    var2.set(var1, &mut node.variables, globals);
+                }
                 grammar::Parameters::Commit(value) => {
                     node.commit = *value;
                 }
