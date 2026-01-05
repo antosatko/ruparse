@@ -191,6 +191,10 @@ impl Lexer {
         self.token_kinds.insert(index, token);
     }
 
+    pub fn get_tokens(&self) -> &[SmolStr] {
+        &self.token_kinds
+    }
+
     /// Lexer for UTF-8 text
     pub fn lex_utf8(&self, text: &str) -> Result<Vec<Token>, PreprocessorError> {
         let chars = text.char_indices().collect::<Vec<(usize, char)>>();
