@@ -1,5 +1,5 @@
 use crate::{
-    grammar::{Parameters, VarKind},
+    grammar::{ErrorDefinition, Parameters, VarKind},
     Map,
 };
 
@@ -776,8 +776,8 @@ impl<'a> Parser<'a> {
                             .push(&mut msg_bus);
                         }
                     }
-                    grammar::Commands::Error { message } => Err(ParseError {
-                        kind: ParseErrors::Message(message),
+                    grammar::Commands::Error { err } => Err(ParseError {
+                        kind: ParseErrors::Message(err),
                         location: tokens[cursor.idx].location,
                         node: Some(node.clone()),
                         hint: None,
@@ -1289,6 +1289,14 @@ impl<'a> Parser<'a> {
                     bus.send(Msg::Break(*n));
                 }
                 grammar::Parameters::Hint(_) => (),
+                grammar::Parameters::Fail(msg) => {
+                    return Err(ParseError {
+                        kind: ParseErrors::Message(&msg),
+                        location: tokens[cursor.idx].location,
+                        node: None,
+                        hint: Self::find_hint(Some(parameters)),
+                    })
+                }
             }
         }
         Ok(())
@@ -1646,7 +1654,7 @@ pub enum ParseErrors<'a> {
     /// Cannot set variable - Developer error
     CannotSetVariable(VarKind<'a>, VariableKind<'a>),
     /// Custom error message
-    Message(&'a str),
+    Message(&'a ErrorDefinition),
     /// Unexpected end of file
     Eof,
     /// Label not found - Developer error
@@ -1684,7 +1692,7 @@ impl<'a> ParseErrors<'a> {
             ParseErrors::VariableNotFound(_) => ("152", "Variable not found"),
             ParseErrors::UncountableVariable(_, _) => ("153", "Variable is uncountable"),
             ParseErrors::CannotSetVariable(_, _) => ("154", "Variable can not be set"),
-            ParseErrors::Message(_) => ("---", "Custom parser message, please implement properly"),
+            ParseErrors::Message(def) => (def.code, def.header),
             ParseErrors::Eof => ("202", "Unexpected end of file"),
             ParseErrors::LabelNotFound(_) => ("155", "Label bot found"),
             ParseErrors::CannotGoBack(_) => ("156", "Can not go back"),
@@ -1722,7 +1730,7 @@ impl<'a> fmt::Debug for ParseErrors<'a> {
             ParseErrors::CannotSetVariable(_name, kind) => {
                 write!(f, "Cannot set variable: dont know<{:?}>", kind)
             }
-            ParseErrors::Message(message) => write!(f, "{}", message),
+            ParseErrors::Message(err) => write!(f, "{}", err.msg),
             ParseErrors::Eof => write!(f, "Unexpected end of file"),
             ParseErrors::LabelNotFound(name) => write!(f, "Label not found: {}", name),
             ParseErrors::CannotGoBack(steps) => write!(f, "Cannot go back {} steps", steps),

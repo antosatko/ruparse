@@ -210,8 +210,8 @@ pub mod ext {
 
     use crate::{
         grammar::{
-            Commands, Comparison, Enumerator, Grammar, MatchToken, Node, OneOf, Parameters, Rule,
-            VarKind, VariableKind,
+            Commands, Comparison, Enumerator, ErrorDefinition, Grammar, MatchToken, Node, OneOf,
+            Parameters, Rule, VarKind, VariableKind,
         },
         lexer::{ControlTokenKind, TokenKinds},
     };
@@ -328,6 +328,12 @@ pub mod ext {
         }
     }
 
+    pub fn goto<'a>(label: &'a str) -> Rule<'a> {
+        Rule::Command {
+            command: Commands::Goto { label },
+        }
+    }
+
     pub fn commit() -> Rule<'static> {
         Rule::Command {
             command: Commands::Commit { set: true },
@@ -337,12 +343,6 @@ pub mod ext {
     pub fn label<'a>(identifier: &'a str) -> Rule<'a> {
         Rule::Command {
             command: Commands::Label { name: identifier },
-        }
-    }
-
-    pub fn goto<'a>(identifier: &'a str) -> Rule<'a> {
-        Rule::Command {
-            command: Commands::Goto { label: identifier },
         }
     }
 
@@ -405,6 +405,14 @@ pub mod ext {
 
         pub fn set(self, var: VarKind<'a>) -> Self {
             self.params([Parameters::Set(var)])
+        }
+
+        pub fn fail(self, err: &'a ErrorDefinition) -> Self {
+            self.params([Parameters::Fail(err)])
+        }
+
+        pub fn goto(self, msg: &'a str) -> Self {
+            self.params([Parameters::Goto(msg)])
         }
 
         pub fn inc(self, var: VarKind<'a>) -> Self {
@@ -511,6 +519,14 @@ pub mod ext {
 
         pub fn set(self, var: VarKind<'a>) -> Self {
             self.params([Parameters::Set(var)])
+        }
+
+        pub fn fail(self, err: &'a ErrorDefinition) -> Self {
+            self.params([Parameters::Fail(err)])
+        }
+
+        pub fn goto(self, msg: &'a str) -> Self {
+            self.params([Parameters::Goto(msg)])
         }
 
         pub fn debug_var(self, var: VarKind<'a>) -> Self {

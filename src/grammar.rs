@@ -246,7 +246,7 @@ pub enum Commands<'a> {
     },
     /// Returns an error from node
     Error {
-        message: &'a str,
+        err: &'a ErrorDefinition,
     },
     Commit {
         set: bool,
@@ -369,12 +369,21 @@ pub enum Parameters<'a> {
     NodeEnd,
     /// Display a hint inside an error message
     Hint(&'a str),
+    /// Rule results in a failure and displays message
+    Fail(&'a ErrorDefinition),
 }
 
 #[derive(Debug, Clone)]
 pub struct Enumerator<'a> {
     pub name: &'a str,
     pub values: Vec<MatchToken<'a>>,
+}
+
+#[derive(Debug, Copy, Clone, Default)]
+pub struct ErrorDefinition {
+    pub header: &'static str,
+    pub code: &'static str,
+    pub msg: &'static str,
 }
 
 /// validation module for grammar that is otherwise dynamically typed
@@ -729,7 +738,7 @@ pub mod validator {
                             self.validate_rule(rule, node, parser, laf, result);
                         }
                     }
-                    Commands::Error { message: _ } => (),
+                    Commands::Error { err: _ } => (),
                     Commands::Commit { set: _ } => (),
                     Commands::Goto { label } => {
                         laf.lost_labels.push(label);
@@ -1023,6 +1032,7 @@ pub mod validator {
                             }
                         }
                     }
+                    Parameters::Fail(_) => (),
                 }
             }
         }
@@ -1118,6 +1128,7 @@ pub mod validator {
         UsedDepricated(Depricated),
         UnusualToken(SmolStr, TokenErrors),
         UnusedLabel(&'a str),
+        FailWithoutExplanation,
     }
 
     #[derive(Debug, Clone)]
@@ -1211,6 +1222,10 @@ pub mod validator {
                 ValidationWarnings::UnusedLabel(label) => {
                     write!(f, "Label declared but never used: {}", label)
                 }
+                ValidationWarnings::FailWithoutExplanation => write!(
+                    f,
+                    "An explanation msut be provided for an explicit rule fail"
+                ),
             }
         }
     }
@@ -1293,6 +1308,7 @@ pub mod validator {
                 ValidationWarnings::UsedDepricated(_) => ("003", "Feature depricated"),
                 ValidationWarnings::UnusualToken(_, _) => ("004", "Unusual token"),
                 ValidationWarnings::UnusedLabel(_) => ("005", "Label unused"),
+                ValidationWarnings::FailWithoutExplanation => ("006", "Fail withoud explanation"),
             }
         }
     }

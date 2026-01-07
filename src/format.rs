@@ -7,6 +7,8 @@ use crate::{
     parser::{Node, ParseError},
 };
 
+const TERM_WIDTH: usize = 60;
+
 impl<'a> ValidationResult<'a> {
     pub fn write_all(&self, w: &mut impl Write) -> std::result::Result<(), std::fmt::Error> {
         let mut reports = Vec::new();
@@ -30,7 +32,9 @@ impl<'a> ValidationResult<'a> {
             );
             reports.push(report);
         }
-        let renderer = Renderer::styled().decor_style(DecorStyle::Unicode);
+        let renderer = Renderer::styled()
+            .term_width(TERM_WIDTH)
+            .decor_style(DecorStyle::Unicode);
         writeln!(w, "{}", renderer.render(&reports[..]))
     }
 
@@ -90,6 +94,7 @@ impl<'a> ParseError<'a> {
         // }
         let render = Renderer::styled()
             .decor_style(DecorStyle::Unicode)
+            .term_width(TERM_WIDTH)
             .render(&[report]);
         write!(w, "{render}")
     }
