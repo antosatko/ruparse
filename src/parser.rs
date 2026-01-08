@@ -126,7 +126,7 @@ impl<'a> Parser<'a> {
             Ok(node) => node,
             Err(err) => return Err((false, err)),
         };
-        node.first_string_idx = tokens[cursor.idx].index;
+        // node.first_string_idx = tokens[cursor.idx].index;
         // In case the node fails to parse, we want to restore the cursor to its original position
         let cursor_clone = cursor.clone();
         let rules = match grammar.nodes.get(name) {
@@ -163,7 +163,12 @@ impl<'a> Parser<'a> {
             if cursor.idx >= tokens.len() {
                 node.last_string_idx = tokens.last().unwrap().index + tokens.last().unwrap().len;
             } else {
-                node.last_string_idx = tokens[cursor.idx].index + tokens[cursor.idx].len;
+                let idx = if cursor.to_advance {
+                    (cursor.idx + 1).min(tokens.len() - 1)
+                } else {
+                    cursor.idx
+                };
+                node.last_string_idx = tokens[idx].index + tokens[idx].len - 1;
             }
         }
 
@@ -208,6 +213,13 @@ impl<'a> Parser<'a> {
                 }
                 Err((node.commit, err))
             }
+        }
+    }
+
+    fn set_text_start_index(node: &mut Node, matched: &Nodes) {
+        if !node.encoutered_first_match {
+            node.first_string_idx = matched.str_idx();
+            node.encoutered_first_match = true;
         }
     }
 
@@ -298,6 +310,7 @@ impl<'a> Parser<'a> {
                                 text,
                             )?
                             .push(&mut msg_bus);
+                            Self::set_text_start_index(node, &val);
                         }
                         TokenCompare::IsNot(err) => {
                             return Err(err);
@@ -401,6 +414,7 @@ impl<'a> Parser<'a> {
                                     text,
                                 )?
                                 .push(&mut msg_bus);
+                                Self::set_text_start_index(node, &val);
                                 break;
                             }
                             IsNot(err) => match err.node {
@@ -478,6 +492,7 @@ impl<'a> Parser<'a> {
                                 text,
                             )?
                             .push(&mut msg_bus);
+                            Self::set_text_start_index(node, &val);
                         }
                         IsNot(err) => {
                             if let Some(ref node) = err.node {
@@ -550,6 +565,7 @@ impl<'a> Parser<'a> {
                                     text,
                                 )?
                                 .push(&mut msg_bus);
+                                Self::set_text_start_index(node, &val);
                                 break;
                             }
                             IsNot(err) => {
@@ -619,6 +635,7 @@ impl<'a> Parser<'a> {
                                 text,
                             )?
                             .push(&mut msg_bus);
+                            Self::set_text_start_index(node, &val);
                             advance = false;
                         }
                         TokenCompare::IsNot(err) => {
@@ -662,12 +679,13 @@ impl<'a> Parser<'a> {
                             });
                         }
                     }
+                    let val = &Nodes::Token(tokens[cursor.idx].clone());
                     self.parse_parameters(
                         parameters,
                         cursor,
                         globals,
                         node,
-                        &Nodes::Token(tokens[cursor.idx].clone()),
+                        val,
                         &mut msg_bus,
                         tokens,
                         text,
@@ -685,6 +703,7 @@ impl<'a> Parser<'a> {
                         text,
                     )?
                     .push(&mut msg_bus);
+                    Self::set_text_start_index(node, &val);
                 }
                 grammar::Rule::Command { command } => match command {
                     grammar::Commands::Compare {
@@ -798,7 +817,7 @@ impl<'a> Parser<'a> {
                     }
                     grammar::Commands::Start => node.first_string_idx = tokens[cursor.idx].index,
                     grammar::Commands::End => {
-                        node.last_string_idx = tokens[cursor.idx].index + tokens[cursor.idx].len
+                        node.last_string_idx = tokens[cursor.idx].index + tokens[cursor.idx].len - 1
                     }
                 },
                 grammar::Rule::Loop { rules } => {
@@ -867,6 +886,7 @@ impl<'a> Parser<'a> {
                                         text,
                                     )?
                                     .push(&mut msg_bus);
+                                    Self::set_text_start_index(node, &val);
                                     break;
                                 }
                                 IsNot(err) => {
@@ -1274,7 +1294,7 @@ impl<'a> Parser<'a> {
                     node.first_string_idx = tokens[cursor.idx].index;
                 }
                 grammar::Parameters::NodeEnd => {
-                    node.last_string_idx = tokens[cursor.idx].index + tokens[cursor.idx].len;
+                    node.last_string_idx = tokens[cursor.idx].index + tokens[cursor.idx].len - 1;
                 }
                 grammar::Parameters::Back(steps) => {
                     bus.send(Msg::Back(*steps as usize));
@@ -1423,12 +1443,26 @@ impl<'a> Nodes<'a> {
             _ => panic!("unwrap_token called on {:#?}", self),
         }
     }
+
+    pub fn str_idx(&self) -> usize {
+        match self {
+            Nodes::Node(node) => node.first_string_idx,
+            Nodes::Token(token) => token.index,
+        }
+    }
+    pub fn str_last_idx(&self) -> usize {
+        match self {
+            Nodes::Node(node) => node.first_string_idx + node.last_string_idx,
+            Nodes::Token(token) => token.index + token.len - 1,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct Node<'a> {
     pub name: &'a str,
     pub variables: Map<String, VariableKind<'a>>,
+    encoutered_first_match: bool,
     pub(crate) first_string_idx: usize,
     pub(crate) last_string_idx: usize,
     pub(crate) commit: bool,
@@ -1441,6 +1475,7 @@ impl<'a> Node<'a> {
         Node {
             name,
             variables: Map::new(),
+            encoutered_first_match: false,
             first_string_idx: 0,
             last_string_idx: 0,
             commit: false,

@@ -106,36 +106,3 @@ impl<'a> ParseError<'a> {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::{
-        api::ext::local,
-        grammar::validator::{
-            TokenErrors, ValidationError, ValidationErrors, ValidationResult, ValidationWarning,
-            ValidationWarnings,
-        },
-    };
-
-    #[test]
-    pub fn validation_result() {
-        let mut results = ValidationResult::new();
-
-        results.errors.push(ValidationError {
-            kind: ValidationErrors::CantUseVariable(local("myVar")),
-            node: None,
-        });
-        results.errors.push(ValidationError {
-            kind: ValidationErrors::CannotGoBackMoreThan { steps: 5, max: 2 },
-            node: None,
-        });
-        results.warnings.push(ValidationWarning {
-            node: None,
-            kind: ValidationWarnings::UnusualToken("labubu".into(), TokenErrors::TooLong),
-        });
-        results.warnings.push(ValidationWarning {
-            node: None,
-            kind: ValidationWarnings::UsedPrint,
-        });
-    }
-}

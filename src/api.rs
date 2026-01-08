@@ -240,6 +240,10 @@ pub mod ext {
         MatchToken::Node(node)
     }
 
+    pub fn complex<'a>(name: &'a str) -> MatchToken<'static> {
+        MatchToken::Token(TokenKinds::Complex(name.into()))
+    }
+
     pub fn enumerator<'a>(enumerator: &'a str) -> MatchToken<'a> {
         MatchToken::Enumerator(enumerator)
     }
@@ -633,6 +637,14 @@ pub mod ext {
             };
             self.grammar.add_node(n);
             node(self.name)
+        }
+
+        pub fn has(self, token: MatchToken<'a>, var: &'a str) -> Self {
+            self.rules([is(token)]).variables([node_var(var)])
+        }
+
+        pub fn maybe_has(self, token: MatchToken<'a>, var: &'a str) -> Self {
+            self.rules([maybe(token)]).variables([node_var(var)])
         }
     }
 
