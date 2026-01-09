@@ -26,7 +26,7 @@ cfg_if::cfg_if! {
 
 #[derive(Debug, Clone)]
 pub struct Parser<'a> {
-    pub lexer: lexer::Lexer,
+    pub lexer: lexer::Lexer<'a>,
     pub grammar: grammar::Grammar<'a>,
     pub parser: parser::Parser<'a>,
 }

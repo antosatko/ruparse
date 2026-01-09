@@ -1,5 +1,7 @@
 use smol_str::SmolStr;
 
+use crate::grammar::ErrorDefinition;
+
 // Choose between std and alloc
 cfg_if::cfg_if! {
     if #[cfg(feature = "std")] {
@@ -43,40 +45,41 @@ pub enum ControlTokenKind {
     Eol,
 }
 
-pub type Preprocessor = fn(text: &str, tokens: &[Token]) -> Result<Vec<Token>, PreprocessorError>;
+pub type Preprocessor<'a> =
+    fn(text: &str, tokens: &[Token]) -> Result<Vec<Token>, PreprocessorError<'a>>;
 
-pub struct PreprocessorError {
-    pub message: String,
+pub struct PreprocessorError<'a> {
+    pub err: &'a ErrorDefinition,
     pub location: TextLocation,
     pub len: usize,
 }
 
-impl fmt::Debug for PreprocessorError {
+impl<'a> fmt::Debug for PreprocessorError<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "An error occurred during lexing at line {} column {}: {}",
-            self.location.line, self.location.column, self.message
+            "{}:{} at {:?}\n{}",
+            self.err.code, self.err.header, self.location, self.err.header
         )
     }
 }
 
-impl fmt::Display for PreprocessorError {
+impl<'a> fmt::Display for PreprocessorError<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "An error occurred during lexing at line {} column {}: {}",
-            self.location.line, self.location.column, self.message
+            "{}:{} at {:?}\n{}",
+            self.err.code, self.err.header, self.location, self.err.header
         )
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct Lexer {
+pub struct Lexer<'a> {
     /// Possible token kinds
     pub(crate) token_kinds: Vec<SmolStr>,
     longest_token_size: usize,
-    pub preprocessors: Vec<Preprocessor>,
+    pub preprocessors: Vec<Preprocessor<'a>>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
@@ -143,14 +146,14 @@ impl fmt::Display for ControlTokenKind {
     }
 }
 
-impl Default for Lexer {
+impl<'a> Default for Lexer<'a> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Lexer {
-    pub fn new() -> Lexer {
+impl<'a> Lexer<'a> {
+    pub fn new() -> Self {
         Lexer {
             token_kinds: Vec::new(),
             longest_token_size: 0,
@@ -196,7 +199,7 @@ impl Lexer {
     }
 
     /// Lexer for UTF-8 text
-    pub fn lex_utf8(&self, text: &str) -> Result<Vec<Token>, PreprocessorError> {
+    pub fn lex_utf8(&self, text: &str) -> Result<Vec<Token>, PreprocessorError<'a>> {
         let chars = text.char_indices().collect::<Vec<(usize, char)>>();
         let len = chars.len();
         // the allocation is a guess, but it should be close enough
@@ -310,7 +313,7 @@ impl Lexer {
     }
 
     /// Lexer for ascii-only text
-    pub fn lex_ascii(&self, text: &str) -> Result<Vec<Token>, PreprocessorError> {
+    pub fn lex_ascii(&self, text: &str) -> Result<Vec<Token>, PreprocessorError<'a>> {
         let chars = text.as_bytes();
         // the allocation is a guess, but it should be close enough
         let mut tokens = Vec::with_capacity(chars.len() / 4);

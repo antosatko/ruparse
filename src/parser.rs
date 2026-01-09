@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::{
     grammar::{ErrorDefinition, Parameters, VarKind},
     Map,
@@ -1103,7 +1105,7 @@ impl<'a> Parser<'a> {
                     if word != &current_token.stringify(text) {
                         return Ok(TokenCompare::IsNot(ParseError {
                             kind: ParseErrors::ExpectedWord {
-                                expected: word.to_string(),
+                                expected: word,
                                 found: current_token.kind.clone(),
                             },
                             location: current_token.location,
@@ -1611,13 +1613,13 @@ impl<'a> VariableKind<'a> {
         }
     }
 
-    pub fn stringify(&self, text: &'a str) -> String {
+    pub fn stringify(&self, text: &'a str) -> Cow<'a, str> {
         match self {
-            VariableKind::Node(Some(nodes)) => nodes.stringify(text).to_string(),
-            VariableKind::NodeList(items) => format!("Nodes len: {}", items.len()),
-            VariableKind::Boolean(v) => v.to_string(),
-            VariableKind::Number(v) => v.to_string(),
-            VariableKind::Node(None) => String::from("None"),
+            VariableKind::Node(Some(nodes)) => nodes.stringify(text).into(),
+            VariableKind::NodeList(items) => format!("Nodes len: {}", items.len()).into(),
+            VariableKind::Boolean(v) => v.to_string().into(),
+            VariableKind::Number(v) => v.to_string().into(),
+            VariableKind::Node(None) => "None".into(),
         }
     }
 }
@@ -1675,7 +1677,7 @@ pub enum ParseErrors<'a> {
     },
     /// Expected a word, found a token
     ExpectedWord {
-        expected: String,
+        expected: &'a str,
         found: TokenKinds,
     },
     /// Enumerator not found - Developer error
