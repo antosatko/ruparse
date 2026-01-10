@@ -285,10 +285,10 @@ pub enum Comparison {
 /// A token that will be matched
 ///
 /// Can be a token kind or a node name
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum MatchToken<'a> {
     /// A token kind
-    Token(TokenKinds),
+    Token(TokenKinds<'a>),
     /// A node name
     Node(&'a str),
     /// A constant word
@@ -443,7 +443,7 @@ pub mod validator {
     }
 
     impl Validator {
-        pub fn validate<'a>(&self, parser: &'a Parser<'a>) -> ValidationResult<'a> {
+        pub fn validate<'a, 'src>(&self, parser: &'a Parser<'a, '_>) -> ValidationResult<'a> {
             let mut result = ValidationResult::new();
 
             self.validate_tokens(&parser.lexer, &mut result);
@@ -454,7 +454,7 @@ pub mod validator {
     }
 
     impl Validator {
-        fn validate_tokens(&self, lexer: &Lexer, result: &mut ValidationResult) {
+        fn validate_tokens<'a>(&self, lexer: &'a Lexer, result: &mut ValidationResult<'a>) {
             let mut tokens: Vec<SmolStr> = Vec::new();
             for token in &lexer.token_kinds {
                 // tokens that have already been validated can be ignored
@@ -465,7 +465,7 @@ pub mod validator {
                 // check for collisions
                 if lexer.token_kinds.iter().filter(|t| *t == token).count() > 1 {
                     result.errors.push(ValidationError {
-                        kind: ValidationErrors::TokenCollision(SmolStr::new(token)),
+                        kind: ValidationErrors::TokenCollision(token),
                         node: None,
                     });
                 }
@@ -480,10 +480,7 @@ pub mod validator {
                 let first = token.chars().next().unwrap();
                 if first.is_numeric() && !self.tokens.alow_numeric {
                     result.warnings.push(ValidationWarning {
-                        kind: ValidationWarnings::UnusualToken(
-                            SmolStr::new(token),
-                            TokenErrors::StartsNumeric,
-                        ),
+                        kind: ValidationWarnings::UnusualToken(token, TokenErrors::StartsNumeric),
                         node: None,
                     });
                 }
@@ -492,7 +489,7 @@ pub mod validator {
                 if token.chars().any(|c| c.is_whitespace()) && !self.tokens.allow_whitespace {
                     result.warnings.push(ValidationWarning {
                         kind: ValidationWarnings::UnusualToken(
-                            SmolStr::new(token),
+                            token,
                             TokenErrors::ContainsWhitespace,
                         ),
                         node: None,
@@ -502,10 +499,7 @@ pub mod validator {
                 // check if it is longer than 3 characters
                 if token.len() > self.tokens.max_chars {
                     result.warnings.push(ValidationWarning {
-                        kind: ValidationWarnings::UnusualToken(
-                            SmolStr::new(token),
-                            TokenErrors::TooLong,
-                        ),
+                        kind: ValidationWarnings::UnusualToken(token, TokenErrors::TooLong),
                         node: None,
                     });
                 }
@@ -513,10 +507,7 @@ pub mod validator {
                 // check if it is not ascii
                 if !token.is_ascii() && !self.tokens.allow_non_ascii {
                     result.warnings.push(ValidationWarning {
-                        kind: ValidationWarnings::UnusualToken(
-                            SmolStr::new(token),
-                            TokenErrors::NotAscii,
-                        ),
+                        kind: ValidationWarnings::UnusualToken(token, TokenErrors::NotAscii),
                         node: None,
                     });
                 }
@@ -528,7 +519,7 @@ pub mod validator {
         /// Validates the grammar
         pub fn validate_grammar<'a>(
             &self,
-            parser: &'a Parser<'a>,
+            parser: &'a Parser<'a, '_>,
             result: &mut ValidationResult<'a>,
         ) {
             for (_, node) in parser.grammar.nodes.iter() {
@@ -539,7 +530,7 @@ pub mod validator {
         pub fn validate_node<'a>(
             &self,
             node: &'a Node,
-            parser: &'a Parser,
+            parser: &'a Parser<'a, '_>,
             result: &mut ValidationResult<'a>,
         ) {
             let mut laf = LostAndFound::new();
@@ -553,7 +544,7 @@ pub mod validator {
             &self,
             rule: &'a Rule,
             node: &'a Node<'a>,
-            parser: &'a Parser<'a>,
+            parser: &'a Parser<'a, '_>,
             laf: &mut LostAndFound<'a>,
             result: &mut ValidationResult<'a>,
         ) {
@@ -774,7 +765,7 @@ pub mod validator {
             &self,
             ruleblock: &'a Vec<Rule<'a>>,
             node: &'a Node<'a>,
-            parser: &'a Parser,
+            parser: &'a Parser<'a, '_>,
             laf: &mut LostAndFound<'a>,
             result: &mut ValidationResult<'a>,
         ) {
@@ -790,7 +781,7 @@ pub mod validator {
             &self,
             token: &'a MatchToken,
             node: &'a Node<'a>,
-            parser: &'a Parser<'a>,
+            parser: &'a Parser<'a, '_>,
             result: &mut ValidationResult<'a>,
         ) {
             match token {
@@ -830,7 +821,7 @@ pub mod validator {
                         // check if token is in the lexer
                         if !parser.lexer.token_kinds.iter().any(|k| k == txt) {
                             result.errors.push(ValidationError {
-                                kind: ValidationErrors::TokenNotFound(txt.clone()),
+                                kind: ValidationErrors::TokenNotFound(txt),
                                 node: Some(node),
                             });
                         }
@@ -843,7 +834,7 @@ pub mod validator {
         pub fn validate_parameters<'a>(
             &self,
             parameters: &Vec<Parameters<'a>>,
-            parser: &'a Parser<'a>,
+            parser: &'a Parser<'a, '_>,
             node: &'a Node<'a>,
             laf: &mut LostAndFound<'a>,
             result: &mut ValidationResult<'a>,
@@ -1104,12 +1095,12 @@ pub mod validator {
         ComparisonInvalid(VarKind<'a>, VarKind<'a>, Comparison),
         VariableNotFound(VarKind<'a>),
         EmptyToken,
-        TokenNotFound(SmolStr),
+        TokenNotFound(&'a str),
         DuplicateLabel(&'a str),
         LabelNotFound(&'a str),
         NodeNotFound(&'a str),
         EnumeratorNotFound(&'a str),
-        TokenCollision(SmolStr),
+        TokenCollision(&'a str),
         CannotGoBackMoreThan { steps: usize, max: usize },
         VariableTypeMismatch((VarKind<'a>, VariableKind), (VarKind<'a>, VariableKind)),
     }
@@ -1126,7 +1117,7 @@ pub mod validator {
         UsedDebug,
         UsedPrint,
         UsedDepricated(Depricated),
-        UnusualToken(SmolStr, TokenErrors),
+        UnusualToken(&'a str, TokenErrors),
         UnusedLabel(&'a str),
         FailWithoutExplanation,
     }

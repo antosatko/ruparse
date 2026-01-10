@@ -32,7 +32,7 @@ impl<'a> parser::Nodes<'a> {
     /// Returns token type
     ///
     /// Panics if the type is node
-    pub fn token(&'a self) -> &'a Token {
+    pub fn token(&self) -> &Token<'_> {
         match self {
             parser::Nodes::Node(node) => panic!("No token found for node: {:?}", node.name),
             parser::Nodes::Token(tok) => tok,
@@ -206,8 +206,6 @@ impl<'a> Nodes<'a> {
 
 pub mod ext {
 
-    use smol_str::SmolStr;
-
     use crate::{
         grammar::{
             Commands, Comparison, Enumerator, ErrorDefinition, Grammar, MatchToken, Node, OneOf,
@@ -216,8 +214,8 @@ pub mod ext {
         lexer::{ControlTokenKind, TokenKinds},
     };
 
-    pub fn token(tok: impl Into<SmolStr>) -> MatchToken<'static> {
-        MatchToken::Token(TokenKinds::Token(tok.into()))
+    pub fn token<'a>(tok: &'a str) -> MatchToken<'a> {
+        MatchToken::Token(TokenKinds::Token(tok))
     }
 
     pub fn word<'a>(word: &'a str) -> MatchToken<'a> {
@@ -240,8 +238,8 @@ pub mod ext {
         MatchToken::Node(node)
     }
 
-    pub fn complex<'a>(name: &'a str) -> MatchToken<'static> {
-        MatchToken::Token(TokenKinds::Complex(name.into()))
+    pub fn complex<'a>(name: &'a str) -> MatchToken<'a> {
+        MatchToken::Token(TokenKinds::Complex(name))
     }
 
     pub fn enumerator<'a>(enumerator: &'a str) -> MatchToken<'a> {

@@ -1,4 +1,4 @@
-use std::fmt::Write;
+use std::{borrow::Cow, fmt::Write};
 
 use annotate_snippets::{renderer::DecorStyle, AnnotationKind, Group, Level, Renderer, Snippet};
 
@@ -69,6 +69,18 @@ impl<'a> ParseError<'a> {
             .fold(true);
         if let Some(file) = filename {
             snippet = snippet.path(file);
+        }
+        let header: Cow<'a, str> = match &self.node {
+            Some(n) => format!("{header} while parsing {}", n.name).into(),
+            None => header.into(),
+        };
+        match &self.node {
+            Some(n) => {
+                snippet = snippet.annotation(
+                    AnnotationKind::Visible.span(n.first_string_idx..n.first_string_idx + 1),
+                )
+            }
+            _ => (),
         }
         let mut report = Group::with_title(
             Level::ERROR

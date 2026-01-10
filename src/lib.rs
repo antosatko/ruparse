@@ -25,20 +25,26 @@ cfg_if::cfg_if! {
 }
 
 #[derive(Debug, Clone)]
-pub struct Parser<'a> {
-    pub lexer: lexer::Lexer<'a>,
+pub struct Parser<'a, 'src> {
+    pub lexer: lexer::Lexer<'a, 'src>,
     pub grammar: grammar::Grammar<'a>,
     pub parser: parser::Parser<'a>,
 }
 
-impl<'a> Default for Parser<'a> {
+impl<'a, 'src> Default for Parser<'a, 'src>
+where
+    'a: 'src,
+{
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<'a> Parser<'a> {
-    pub fn new() -> Parser<'a> {
+impl<'a, 'src> Parser<'a, 'src>
+where
+    'a: 'src,
+{
+    pub fn new() -> Parser<'a, 'src> {
         let lexer = lexer::Lexer::new();
         let grammar = grammar::Grammar::new();
         Parser {
@@ -50,9 +56,9 @@ impl<'a> Parser<'a> {
 
     pub fn parse(
         &'a self,
-        tokens: &Vec<lexer::Token>,
+        tokens: &Vec<lexer::Token<'src>>,
         text: &'a str,
-    ) -> Result<parser::ParseResult<'a>, parser::ParseError<'a>> {
+    ) -> Result<parser::ParseResult<'src>, parser::ParseError<'a>> {
         self.parser.parse(&self.grammar, &self.lexer, text, tokens)
     }
 }
