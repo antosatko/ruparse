@@ -3,6 +3,7 @@ use crate::{
     parser::{self, Nodes},
 };
 use core::panic;
+use std::borrow::Cow;
 // Choose between std and alloc
 cfg_if::cfg_if! {
     if #[cfg(feature = "std")] {
@@ -123,6 +124,7 @@ impl<'a> parser::Node<'a> {
             None => panic!("No variable \"{}\" found for node \"{}\". Existing variables: {:?}", variable, self.name, self.variables.keys().collect::<Vec<_>>()),
         }
     }
+
     /// Returns value of variable that is a bool
     ///
     /// Panics if the variable is not a bool or if it does not exist
@@ -139,6 +141,7 @@ impl<'a> parser::Node<'a> {
             None => panic!("No variable \"{}\" found for node \"{}\". Existing variables: {:?}", variable, self.name, self.variables.keys().collect::<Vec<_>>()),
         }
     }
+
     /// Returns value of variable that is a node
     ///
     /// Panics if the variable is not a node or if it does not exist
@@ -155,6 +158,7 @@ impl<'a> parser::Node<'a> {
             None => panic!("No variable \"{}\" found for node \"{}\". Existing variables: {:?}", variable, self.name, self.variables.keys().collect::<Vec<_>>()),
         }
     }
+
     /// Returns value of variable that is a list of nodes
     ///
     /// Panics if the variable is not a list of nodes or if it does not exist
@@ -183,6 +187,7 @@ impl<'a> parser::ParseResult<'a> {
             parser::Nodes::Token(tok) => &text[tok.index..tok.index + tok.len],
         }
     }
+
     /// Returns stringified version of the node
     ///
     /// This operation is O(1)
@@ -212,6 +217,7 @@ impl<'a> Nodes<'a> {
             Nodes::Token(token) => &txt[token.index..token.index + token.len],
         }
     }
+
     #[track_caller]
     pub fn stringify_until(&self, end: &Self, txt: &'a str) -> &'a str {
         let end = match end {
@@ -224,22 +230,21 @@ impl<'a> Nodes<'a> {
         }
     }
 }
+
 impl Nodes<'_> {
     #[cold]
     #[inline(never)]
     #[track_caller]
     pub fn ice(&self, msg: &str) -> ! {
-        let caller = std::panic::Location::caller();
         panic!(
-            "internal compiler error UWU 🧊\n at caller: {}:{}:{}\n node: {}\n msg: {}",
-            caller.file(),
-            caller.line(),
-            caller.column(),
+            "internal compiler error UWU 🧊\n source location: {:?}\n node: {}\n msg: {}",
+            self.location(),
             self.get_name(),
             msg,
         )
     }
 }
+
 pub mod ext {
     use crate::{
         grammar::{

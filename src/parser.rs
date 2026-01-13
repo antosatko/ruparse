@@ -1459,6 +1459,18 @@ pub enum Nodes<'a> {
     Token(Token<'a>),
 }
 
+impl<'a> From<Node<'a>> for Nodes<'a> {
+    fn from(value: Node<'a>) -> Self {
+        Nodes::Node(value)
+    }
+}
+
+impl<'a> From<Token<'a>> for Nodes<'a> {
+    fn from(value: Token<'a>) -> Self {
+        Nodes::Token(value)
+    }
+}
+
 impl<'a> Nodes<'a> {
     pub fn is_node(&self) -> bool {
         match self {
