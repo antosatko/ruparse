@@ -3,7 +3,7 @@ use crate::{
     parser::{self, Nodes},
 };
 use core::panic;
-use std::borrow::Cow;
+
 // Choose between std and alloc
 cfg_if::cfg_if! {
     if #[cfg(feature = "std")] {
@@ -334,11 +334,15 @@ pub mod ext {
             parameters: Vec::new(),
         }
     }
-    pub fn compare<'a>(a: VarKind<'a>, b: VarKind<'a>, comp: Comparison) -> Rule<'a> {
+    pub fn compare<'a>(
+        a: impl IntoVarKind<'a>,
+        b: impl IntoVarKind<'a>,
+        comp: Comparison,
+    ) -> Rule<'a> {
         Rule::Command {
             command: Commands::Compare {
-                left: a,
-                right: b,
+                left: a.into_varkind(),
+                right: b.into_varkind(),
                 comparison: comp,
                 rules: Vec::new(),
             },
@@ -415,8 +419,8 @@ pub mod ext {
             }
             self
         }
-        pub fn set(self, var: VarKind<'a>) -> Self {
-            self.params([Parameters::Set(var)])
+        pub fn set(self, var: impl IntoVarKind<'a>) -> Self {
+            self.params([Parameters::Set(var.into_varkind())])
         }
         pub fn fail(self, err: &'a ErrorDefinition) -> Self {
             self.params([Parameters::Fail(err)])
@@ -424,17 +428,20 @@ pub mod ext {
         pub fn goto(self, msg: &'a str) -> Self {
             self.params([Parameters::Goto(msg)])
         }
-        pub fn inc(self, var: VarKind<'a>) -> Self {
-            self.params([Parameters::Increment(var)])
+        pub fn inc(self, var: impl IntoVarKind<'a>) -> Self {
+            self.params([Parameters::Increment(var.into_varkind())])
         }
-        pub fn dec(self, var: VarKind<'a>) -> Self {
-            self.params([Parameters::Decrement(var)])
+        pub fn dec(self, var: impl IntoVarKind<'a>) -> Self {
+            self.params([Parameters::Decrement(var.into_varkind())])
         }
-        pub fn clone_value(self, src: VarKind<'a>, dst: VarKind<'a>) -> Self {
-            self.params([Parameters::CloneValue(src, dst)])
+        pub fn clone_value(self, src: impl IntoVarKind<'a>, dst: impl IntoVarKind<'a>) -> Self {
+            self.params([Parameters::CloneValue(
+                src.into_varkind(),
+                dst.into_varkind(),
+            )])
         }
-        pub fn debug_var(self, var: VarKind<'a>) -> Self {
-            self.params([Parameters::Debug(Some(var))])
+        pub fn debug_var(self, var: impl IntoVarKind<'a>) -> Self {
+            self.params([Parameters::Debug(Some(var.into_varkind()))])
         }
         pub fn debug_token(self) -> Self {
             self.params([Parameters::Debug(None)])
@@ -503,8 +510,8 @@ pub mod ext {
             self.parameters = params.into_iter().collect();
             self
         }
-        pub fn set(self, var: VarKind<'a>) -> Self {
-            self.params([Parameters::Set(var)])
+        pub fn set(self, var: impl IntoVarKind<'a>) -> Self {
+            self.params([Parameters::Set(var.into_varkind())])
         }
         pub fn fail(self, err: &'a ErrorDefinition) -> Self {
             self.params([Parameters::Fail(err)])
@@ -512,14 +519,17 @@ pub mod ext {
         pub fn goto(self, msg: &'a str) -> Self {
             self.params([Parameters::Goto(msg)])
         }
-        pub fn debug_var(self, var: VarKind<'a>) -> Self {
-            self.params([Parameters::Debug(Some(var))])
+        pub fn debug_var(self, var: impl IntoVarKind<'a>) -> Self {
+            self.params([Parameters::Debug(Some(var.into_varkind()))])
         }
         pub fn debug_token(self) -> Self {
             self.params([Parameters::Debug(None)])
         }
-        pub fn clone_value(self, src: VarKind<'a>, dst: VarKind<'a>) -> Self {
-            self.params([Parameters::CloneValue(src, dst)])
+        pub fn clone_value(self, src: impl IntoVarKind<'a>, dst: impl IntoVarKind<'a>) -> Self {
+            self.params([Parameters::CloneValue(
+                src.into_varkind(),
+                dst.into_varkind(),
+            )])
         }
         pub fn commit(self) -> Self {
             self.params([Parameters::Commit(true)])
@@ -625,6 +635,22 @@ pub mod ext {
             };
             self.grammar.add_enum(e);
             enumerator(self.name)
+        }
+    }
+
+    pub trait IntoVarKind<'a> {
+        fn into_varkind(self) -> VarKind<'a>;
+    }
+
+    impl<'a> IntoVarKind<'a> for VarKind<'a> {
+        fn into_varkind(self) -> VarKind<'a> {
+            self
+        }
+    }
+
+    impl<'a> IntoVarKind<'a> for &'a str {
+        fn into_varkind(self) -> VarKind<'a> {
+            local(self)
         }
     }
 }

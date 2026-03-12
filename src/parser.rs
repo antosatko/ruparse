@@ -132,7 +132,8 @@ impl<'a> Parser<'a> {
         };
         node.commit = auto_commit;
         let peek = Self::next_non_whitespace(&tokens[cursor.idx..]).unwrap_or(0);
-        node.first_string_idx = tokens[cursor.idx + peek].index;
+        let safe_idx = (cursor.idx + peek).min(tokens.len().saturating_sub(1));
+        node.first_string_idx = tokens[safe_idx].index;
         // In case the node fails to parse, we want to restore the cursor to its original position
         let cursor_clone = cursor.clone();
         let rules = match grammar.nodes.get(name) {
@@ -170,11 +171,11 @@ impl<'a> Parser<'a> {
                 node.last_string_idx = tokens.last().unwrap().index + tokens.last().unwrap().len;
             } else {
                 let idx = if cursor.to_advance {
-                    (cursor.idx + 1).min(tokens.len() - 1)
-                } else {
                     cursor.idx
+                } else {
+                    cursor.idx.saturating_sub(1)
                 };
-                node.last_string_idx = tokens[idx].index + tokens[idx].len - 1;
+                node.last_string_idx = tokens[idx].index + tokens[idx].len;
             }
         }
 
@@ -669,6 +670,7 @@ impl<'a> Parser<'a> {
                     rules,
                     parameters,
                 } => {
+                    Self::try_set_text_start_index(node, &Nodes::Token(tokens[cursor.idx].clone()));
                     // search for the token and execute the rules when the token is found
                     while let TokenCompare::IsNot(_) = self.match_token(
                         grammar,
@@ -831,7 +833,8 @@ impl<'a> Parser<'a> {
                     }
                     grammar::Commands::Start => node.first_string_idx = tokens[cursor.idx].index,
                     grammar::Commands::End => {
-                        node.last_string_idx = tokens[cursor.idx].index + tokens[cursor.idx].len - 1
+                        let prev = cursor.idx.saturating_sub(1);
+                        node.last_string_idx = tokens[prev].index + tokens[prev].len - 1;
                     }
                 },
                 grammar::Rule::Loop { rules } => {
@@ -1508,7 +1511,7 @@ impl<'a> Nodes<'a> {
     }
     pub fn str_last_idx(&self) -> usize {
         match self {
-            Nodes::Node(node) => node.first_string_idx + node.last_string_idx,
+            Nodes::Node(node) => node.last_string_idx,
             Nodes::Token(token) => token.index + token.len - 1,
         }
     }
