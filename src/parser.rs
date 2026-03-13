@@ -223,9 +223,15 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn try_set_text_start_index(node: &mut Node, matched: &Nodes) {
+    fn try_set_text_start_index(
+        node: &mut Node,
+        matched: &Nodes,
+        tokens: &[Token],
+        cursor: &Cursor,
+    ) {
         if !node.encoutered_first_match {
             node.first_string_idx = matched.str_idx();
+            node.location = tokens[cursor.idx].location;
             node.encoutered_first_match = true;
         }
     }
@@ -318,7 +324,7 @@ impl<'a> Parser<'a> {
                                 text,
                             )?
                             .push(&mut msg_bus);
-                            Self::try_set_text_start_index(node, &val);
+                            Self::try_set_text_start_index(node, &val, tokens, &cursor);
                         }
                         TokenCompare::IsNot(err) => {
                             return Err(err);
@@ -365,6 +371,65 @@ impl<'a> Parser<'a> {
                                 text,
                             )?
                             .push(&mut msg_bus);
+                        }
+                    }
+                }
+                grammar::Rule::Peek {
+                    token,
+                    is,
+                    isnt,
+                    parameters,
+                } => {
+                    match self.match_token(
+                        grammar,
+                        lexer,
+                        token,
+                        cursor,
+                        globals,
+                        cursor_clone,
+                        tokens,
+                        Some(parameters),
+                        text,
+                        false,
+                    )? {
+                        TokenCompare::Is(val) => {
+                            self.parse_parameters(
+                                parameters,
+                                cursor,
+                                globals,
+                                node,
+                                &val,
+                                &mut msg_bus,
+                                tokens,
+                                text,
+                            )?;
+                            self.parse_rules(
+                                grammar,
+                                lexer,
+                                is,
+                                cursor,
+                                globals,
+                                cursor_clone,
+                                node,
+                                tokens,
+                                text,
+                            )?
+                            .push(&mut msg_bus);
+                        }
+                        TokenCompare::IsNot(err) => {
+                            self.parse_rules(
+                                grammar,
+                                lexer,
+                                isnt,
+                                cursor,
+                                globals,
+                                cursor_clone,
+                                node,
+                                tokens,
+                                text,
+                            )?
+                            .push(&mut msg_bus);
+                            return Err(err);
                         }
                     }
                 }
@@ -424,7 +489,7 @@ impl<'a> Parser<'a> {
                                     text,
                                 )?
                                 .push(&mut msg_bus);
-                                Self::try_set_text_start_index(node, &val);
+                                Self::try_set_text_start_index(node, &val, tokens, &cursor);
                                 break;
                             }
                             IsNot(err) => match err.node {
@@ -504,7 +569,7 @@ impl<'a> Parser<'a> {
                                 text,
                             )?
                             .push(&mut msg_bus);
-                            Self::try_set_text_start_index(node, &val);
+                            Self::try_set_text_start_index(node, &val, tokens, &cursor);
                         }
                         IsNot(err) => {
                             if let Some(ref node) = err.node {
@@ -578,7 +643,7 @@ impl<'a> Parser<'a> {
                                     text,
                                 )?
                                 .push(&mut msg_bus);
-                                Self::try_set_text_start_index(node, &val);
+                                Self::try_set_text_start_index(node, &val, tokens, &cursor);
                                 break;
                             }
                             IsNot(err) => {
@@ -649,7 +714,7 @@ impl<'a> Parser<'a> {
                                 text,
                             )?
                             .push(&mut msg_bus);
-                            Self::try_set_text_start_index(node, &val);
+                            Self::try_set_text_start_index(node, &val, tokens, &cursor);
                             advance = false;
                         }
                         TokenCompare::IsNot(err) => {
@@ -670,7 +735,12 @@ impl<'a> Parser<'a> {
                     rules,
                     parameters,
                 } => {
-                    Self::try_set_text_start_index(node, &Nodes::Token(tokens[cursor.idx].clone()));
+                    Self::try_set_text_start_index(
+                        node,
+                        &Nodes::Token(tokens[cursor.idx].clone()),
+                        tokens,
+                        &cursor,
+                    );
                     // search for the token and execute the rules when the token is found
                     while let TokenCompare::IsNot(_) = self.match_token(
                         grammar,
@@ -719,7 +789,7 @@ impl<'a> Parser<'a> {
                         text,
                     )?
                     .push(&mut msg_bus);
-                    Self::try_set_text_start_index(node, &val);
+                    Self::try_set_text_start_index(node, &val, tokens, &cursor);
                 }
                 grammar::Rule::Command { command } => match command {
                     grammar::Commands::Compare {
@@ -904,7 +974,7 @@ impl<'a> Parser<'a> {
                                         text,
                                     )?
                                     .push(&mut msg_bus);
-                                    Self::try_set_text_start_index(node, &val);
+                                    Self::try_set_text_start_index(node, &val, tokens, &cursor);
                                     break;
                                 }
                                 IsNot(err) => {

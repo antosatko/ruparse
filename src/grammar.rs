@@ -141,6 +141,12 @@ pub enum Rule<'a> {
     UntilOneOf {
         tokens: Vec<OneOf<'a>>,
     },
+    Peek {
+        token: MatchToken<'a>,
+        is: Vec<Rule<'a>>,
+        isnt: Vec<Rule<'a>>,
+        parameters: Vec<Parameters<'a>>,
+    },
     /// Performs a command
     ///
     /// The command will be executed without matching a token
@@ -624,6 +630,17 @@ pub mod validator {
                         self.validate_parameters(&one_of.parameters, parser, node, laf, result);
                         self.validate_ruleblock(&one_of.rules, node, parser, laf, result)
                     }
+                }
+                Rule::Peek {
+                    token,
+                    is,
+                    isnt,
+                    parameters,
+                } => {
+                    self.validate_token(token, node, parser, result);
+                    self.validate_ruleblock(is, node, parser, laf, result);
+                    self.validate_ruleblock(isnt, node, parser, laf, result);
+                    self.validate_parameters(parameters, parser, node, laf, result);
                 }
                 Rule::Command { command } => match command {
                     Commands::Compare {

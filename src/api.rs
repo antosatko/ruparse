@@ -253,12 +253,15 @@ pub mod ext {
         },
         lexer::{ControlTokenKind, TokenKinds},
     };
+
     pub fn token<'a>(tok: &'a str) -> MatchToken<'a> {
         MatchToken::Token(TokenKinds::Token(tok))
     }
+
     pub fn word<'a>(word: &'a str) -> MatchToken<'a> {
         MatchToken::Word(word)
     }
+
     pub fn text() -> MatchToken<'static> {
         MatchToken::Token(TokenKinds::Text)
     }
@@ -299,6 +302,14 @@ pub mod ext {
     }
     pub fn maybe<'a>(matches: MatchToken<'a>) -> Rule<'a> {
         Rule::Maybe {
+            token: matches,
+            parameters: Vec::new(),
+            is: Vec::new(),
+            isnt: Vec::new(),
+        }
+    }
+    pub fn peek<'a>(matches: MatchToken<'a>) -> Rule<'a> {
+        Rule::Peek {
             token: matches,
             parameters: Vec::new(),
             is: Vec::new(),
