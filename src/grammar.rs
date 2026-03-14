@@ -17,6 +17,7 @@ pub struct Grammar<'a> {
     pub nodes: Map<String, Node<'a>>,
     pub enumerators: Map<String, Enumerator<'a>>,
     pub globals: Vec<(&'a str, VariableKind)>,
+    pub ignored: Vec<TokenKinds<'a>>,
     /// If true, the parser will throw an error if the last token is not EOF
     pub eof: bool,
 }
@@ -33,6 +34,7 @@ impl<'a> Grammar<'a> {
             nodes: Map::new(),
             enumerators: Map::new(),
             globals: Vec::new(),
+            ignored: Vec::new(),
             eof: true,
         }
     }
@@ -449,7 +451,7 @@ pub mod validator {
     }
 
     impl Validator {
-        pub fn validate<'a, 'src>(&self, parser: &'a Parser<'a, '_>) -> ValidationResult<'a> {
+        pub fn validate<'a, 'src>(&self, parser: &'a Parser<'a>) -> ValidationResult<'a> {
             let mut result = ValidationResult::new();
 
             self.validate_tokens(&parser.lexer, &mut result);
@@ -525,7 +527,7 @@ pub mod validator {
         /// Validates the grammar
         pub fn validate_grammar<'a>(
             &self,
-            parser: &'a Parser<'a, '_>,
+            parser: &'a Parser<'a>,
             result: &mut ValidationResult<'a>,
         ) {
             for (_, node) in parser.grammar.nodes.iter() {
@@ -536,7 +538,7 @@ pub mod validator {
         pub fn validate_node<'a>(
             &self,
             node: &'a Node,
-            parser: &'a Parser<'a, '_>,
+            parser: &'a Parser<'a>,
             result: &mut ValidationResult<'a>,
         ) {
             let mut laf = LostAndFound::new();
@@ -550,7 +552,7 @@ pub mod validator {
             &self,
             rule: &'a Rule,
             node: &'a Node<'a>,
-            parser: &'a Parser<'a, '_>,
+            parser: &'a Parser<'a>,
             laf: &mut LostAndFound<'a>,
             result: &mut ValidationResult<'a>,
         ) {
@@ -782,7 +784,7 @@ pub mod validator {
             &self,
             ruleblock: &'a Vec<Rule<'a>>,
             node: &'a Node<'a>,
-            parser: &'a Parser<'a, '_>,
+            parser: &'a Parser<'a>,
             laf: &mut LostAndFound<'a>,
             result: &mut ValidationResult<'a>,
         ) {
@@ -798,7 +800,7 @@ pub mod validator {
             &self,
             token: &'a MatchToken,
             node: &'a Node<'a>,
-            parser: &'a Parser<'a, '_>,
+            parser: &'a Parser<'a>,
             result: &mut ValidationResult<'a>,
         ) {
             match token {
@@ -851,7 +853,7 @@ pub mod validator {
         pub fn validate_parameters<'a>(
             &self,
             parameters: &Vec<Parameters<'a>>,
-            parser: &'a Parser<'a, '_>,
+            parser: &'a Parser<'a>,
             node: &'a Node<'a>,
             laf: &mut LostAndFound<'a>,
             result: &mut ValidationResult<'a>,

@@ -90,7 +90,10 @@ impl<'a> Parser<'a> {
                     }
                     // If the grammar has an eof token, we need to check if the cursor is at the end of the tokens
                     // Consume all the whitespace tokens
-                    while cursor.idx < tokens.len() - 1 && tokens[cursor.idx].kind.is_whitespace() {
+                    while cursor.idx < tokens.len() - 1
+                        && (tokens[cursor.idx].kind.is_whitespace()
+                            || grammar.ignored.contains(&tokens[cursor.idx].kind))
+                    {
                         cursor.idx += 1;
                     }
                     if let TokenKinds::Control(crate::lexer::ControlTokenKind::Eof) =
@@ -131,7 +134,7 @@ impl<'a> Parser<'a> {
             Err(err) => return Err((false, err)),
         };
         node.commit = auto_commit;
-        let peek = Self::next_non_whitespace(&tokens[cursor.idx..]).unwrap_or(0);
+        let peek = Self::next_non_whitespace(&tokens[cursor.idx..], &grammar.ignored).unwrap_or(0);
         let safe_idx = (cursor.idx + peek).min(tokens.len().saturating_sub(1));
         node.first_string_idx = tokens[safe_idx].index;
         // In case the node fails to parse, we want to restore the cursor to its original position
@@ -509,7 +512,9 @@ impl<'a> Parser<'a> {
                         }
                     }
                     if !found {
-                        let peek = Self::next_non_whitespace(&tokens[cursor.idx..]).unwrap_or(0);
+                        let peek =
+                            Self::next_non_whitespace(&tokens[cursor.idx..], &grammar.ignored)
+                                .unwrap_or(0);
                         err(
                             ParseErrors::ExpectedOneOf {
                                 expected: pos_tokens.iter().map(|x| x.token.clone()).collect(),
@@ -992,7 +997,9 @@ impl<'a> Parser<'a> {
                         cursor.idx += 1;
                     }
                     if !found {
-                        let peek = Self::next_non_whitespace(&tokens[cursor.idx..]).unwrap_or(0);
+                        let peek =
+                            Self::next_non_whitespace(&tokens[cursor.idx..], &grammar.ignored)
+                                .unwrap_or(0);
                         err(
                             ParseErrors::ExpectedOneOf {
                                 expected: match_tokens.iter().map(|x| x.token.clone()).collect(),
@@ -1142,7 +1149,9 @@ impl<'a> Parser<'a> {
                 }
                 let mut current_token = &tokens[cursor.idx];
                 let mut peek = 0;
-                while current_token.kind.is_whitespace() {
+                while current_token.kind.is_whitespace()
+                    || grammar.ignored.contains(&current_token.kind)
+                {
                     if *tok == current_token.kind {
                         cursor.idx += peek;
                         return Ok(TokenCompare::Is(Nodes::Token(current_token.clone())));
@@ -1186,7 +1195,9 @@ impl<'a> Parser<'a> {
             grammar::MatchToken::Word(word) => {
                 let mut current_token = &tokens[cursor.idx];
                 let mut peek = 0;
-                while current_token.kind.is_whitespace() {
+                while current_token.kind.is_whitespace()
+                    || grammar.ignored.contains(&current_token.kind)
+                {
                     peek += 1;
                     current_token = &tokens[cursor.idx + peek];
                 }
@@ -1224,7 +1235,9 @@ impl<'a> Parser<'a> {
                 let cursor_clone_local = cursor.clone();
                 let token = loop {
                     if i >= enumerator.values.len() {
-                        let peek = Self::next_non_whitespace(&tokens[cursor.idx..]).unwrap_or(0);
+                        let peek =
+                            Self::next_non_whitespace(&tokens[cursor.idx..], &grammar.ignored)
+                                .unwrap_or(0);
                         return Ok(TokenCompare::IsNot(ParseError {
                             kind: ParseErrors::ExpectedOneOf {
                                 expected: enumerator.values.to_vec(),
@@ -1284,9 +1297,9 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn next_non_whitespace(tokens: &[Token]) -> Option<usize> {
+    fn next_non_whitespace(tokens: &[Token], ignored: &[TokenKinds<'_>]) -> Option<usize> {
         for (idx, token) in tokens.iter().enumerate() {
-            if !token.kind.is_whitespace() {
+            if !token.kind.is_whitespace() && !ignored.contains(&token.kind) {
                 return Some(idx);
             }
         }

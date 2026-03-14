@@ -120,13 +120,8 @@ impl<'a> ParseError<'a> {
     }
 }
 
-impl<'a> PreprocessorError<'a> {
-    pub fn write(
-        &self,
-        w: &mut impl Write,
-        txt: &'a str,
-        filename: Option<&str>,
-    ) -> std::fmt::Result {
+impl PreprocessorError {
+    pub fn write(&self, w: &mut impl Write, txt: &str, filename: Option<&str>) -> std::fmt::Result {
         let span = self.location.index..self.location.index + self.len;
         let mut snippet = Snippet::source(txt)
             .annotation(
@@ -153,7 +148,7 @@ impl<'a> PreprocessorError<'a> {
         write!(w, "{render}")
     }
 
-    pub fn print(&self, txt: &'a str, filename: Option<&str>) -> std::fmt::Result {
+    pub fn print(&self, txt: &str, filename: Option<&str>) -> std::fmt::Result {
         let mut buf = String::new();
         self.write(&mut buf, txt, filename)?;
         println!("{buf}");

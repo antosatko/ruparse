@@ -25,13 +25,13 @@ cfg_if::cfg_if! {
 }
 
 #[derive(Debug, Clone)]
-pub struct Parser<'a, 'src> {
-    pub lexer: lexer::Lexer<'a, 'src>,
+pub struct Parser<'a> {
+    pub lexer: lexer::Lexer,
     pub grammar: grammar::Grammar<'a>,
     pub parser: parser::Parser<'a>,
 }
 
-impl<'a, 'src> Default for Parser<'a, 'src>
+impl<'a, 'src> Default for Parser<'a>
 where
     'a: 'src,
 {
@@ -40,11 +40,12 @@ where
     }
 }
 
-impl<'a, 'src> Parser<'a, 'src>
+impl<'a, 'src> Parser<'a>
 where
     'a: 'src,
+    'src: 'a,
 {
-    pub fn new() -> Parser<'a, 'src> {
+    pub fn new() -> Parser<'a> {
         let lexer = lexer::Lexer::new();
         let grammar = grammar::Grammar::new();
         Parser {

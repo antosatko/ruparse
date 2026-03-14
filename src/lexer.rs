@@ -45,16 +45,16 @@ pub enum ControlTokenKind {
     Eol,
 }
 
-pub type Preprocessor<'a, 'tok> =
-    fn(text: &str, tokens: &[Token<'tok>]) -> Result<Vec<Token<'tok>>, PreprocessorError<'a>>;
+pub type Preprocessor =
+    for<'tok> fn(text: &str, tokens: &[Token<'tok>]) -> Result<Vec<Token<'tok>>, PreprocessorError>;
 
-pub struct PreprocessorError<'a> {
-    pub err: &'a ErrorDefinition,
+pub struct PreprocessorError {
+    pub err: ErrorDefinition,
     pub location: TextLocation,
     pub len: usize,
 }
 
-impl<'a> fmt::Debug for PreprocessorError<'a> {
+impl<'a> fmt::Debug for PreprocessorError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -64,7 +64,7 @@ impl<'a> fmt::Debug for PreprocessorError<'a> {
     }
 }
 
-impl<'a> fmt::Display for PreprocessorError<'a> {
+impl<'a> fmt::Display for PreprocessorError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -75,11 +75,11 @@ impl<'a> fmt::Display for PreprocessorError<'a> {
 }
 
 #[derive(Debug, Clone)]
-pub struct Lexer<'a, 'src> {
+pub struct Lexer {
     /// Possible token kinds
     pub(crate) token_kinds: Vec<SmolStr>,
     longest_token_size: usize,
-    pub preprocessors: Vec<Preprocessor<'a, 'src>>,
+    pub preprocessors: Vec<Preprocessor>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
@@ -146,7 +146,7 @@ impl fmt::Display for ControlTokenKind {
     }
 }
 
-impl<'a, 'tok> Lexer<'a, 'tok>
+impl<'a, 'tok> Lexer
 where
     'a: 'tok,
 {
@@ -196,7 +196,7 @@ where
     }
 
     /// Lexer for UTF-8 text
-    pub fn lex_utf8(&'a self, text: &'tok str) -> Result<Vec<Token<'tok>>, PreprocessorError<'a>> {
+    pub fn lex_utf8(&'a self, text: &'tok str) -> Result<Vec<Token<'tok>>, PreprocessorError> {
         let chars = text.char_indices().collect::<Vec<(usize, char)>>();
         let len = chars.len();
         // the allocation is a guess, but it should be close enough
@@ -310,7 +310,7 @@ where
     }
 
     /// Lexer for ascii-only text
-    pub fn lex_ascii(&'a self, text: &'tok str) -> Result<Vec<Token<'tok>>, PreprocessorError<'a>> {
+    pub fn lex_ascii(&'a self, text: &'tok str) -> Result<Vec<Token<'tok>>, PreprocessorError> {
         let chars = text.as_bytes();
         // the allocation is a guess, but it should be close enough
         let mut tokens = Vec::with_capacity(chars.len() / 4);
