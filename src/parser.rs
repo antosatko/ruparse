@@ -420,6 +420,11 @@ impl<'a> Parser<'a> {
                             .push(&mut msg_bus);
                         }
                         TokenCompare::IsNot(err) => {
+                            if let Some(ref node) = err.node {
+                                if node.commit {
+                                    return Err(err);
+                                }
+                            }
                             self.parse_rules(
                                 grammar,
                                 lexer,
@@ -432,7 +437,6 @@ impl<'a> Parser<'a> {
                                 text,
                             )?
                             .push(&mut msg_bus);
-                            return Err(err);
                         }
                     }
                 }
@@ -1147,8 +1151,10 @@ impl<'a> Parser<'a> {
                         hint: Self::find_hint(parameters),
                     }));
                 }
+
                 let mut current_token = &tokens[cursor.idx];
                 let mut peek = 0;
+
                 while current_token.kind.is_whitespace()
                     || grammar.ignored.contains(&current_token.kind)
                 {
@@ -1157,8 +1163,22 @@ impl<'a> Parser<'a> {
                         return Ok(TokenCompare::Is(Nodes::Token(current_token.clone())));
                     }
                     peek += 1;
+
+                    if cursor.idx + peek >= tokens.len() {
+                        if *tok == TokenKinds::Control(crate::lexer::ControlTokenKind::Eof) {
+                            cursor.idx += peek; // Advance past the whitespace
+                            return Ok(TokenCompare::Is(Nodes::Token(Token {
+                                kind: TokenKinds::Control(crate::lexer::ControlTokenKind::Eof),
+                                index: 0,
+                                len: 0,
+                                location: TextLocation::new(0, 0, 0, 0),
+                            })));
+                        }
+                        break;
+                    }
                     current_token = &tokens[cursor.idx + peek];
                 }
+
                 if *tok != current_token.kind {
                     return Ok(TokenCompare::IsNot(ParseError {
                         kind: ParseErrors::ExpectedToken {
@@ -1168,7 +1188,6 @@ impl<'a> Parser<'a> {
                         location: current_token.location,
                         node: None,
                         hint: Self::find_hint(parameters),
-                        // hint,
                     }));
                 }
                 cursor.idx += peek;

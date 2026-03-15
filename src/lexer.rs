@@ -236,8 +236,8 @@ where
                 }
                 tokens.push(Token {
                     index: chars[i].0,
-                    len: token_kind.len(),
-                    location: TextLocation::new(line, column, chars[i].0, token_kind.len()),
+                    len: tok_len,
+                    location: TextLocation::new(line, column, chars[i].0, tok_len),
                     kind: TokenKinds::Token(&token_kind),
                 });
                 i += tok_len;
