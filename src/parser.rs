@@ -234,7 +234,8 @@ impl<'a> Parser<'a> {
     ) {
         if !node.encoutered_first_match {
             node.first_string_idx = matched.str_idx();
-            node.location = tokens[cursor.idx].location;
+            let safe_idx = cursor.idx.min(tokens.len().saturating_sub(1));
+            node.location = tokens[safe_idx].location;
             node.encoutered_first_match = true;
         }
     }
@@ -267,8 +268,6 @@ impl<'a> Parser<'a> {
                             node: Some(node.clone()),
                             hint: None,
                         });
-                    } else {
-                        cursor.idx -= 1;
                     }
                 }
             }
@@ -352,11 +351,15 @@ impl<'a> Parser<'a> {
                         false,
                     )? {
                         TokenCompare::Is(_) => {
+                            let safe_idx = cursor.idx.min(tokens.len().saturating_sub(1));
+                            let kind = tokens.get(cursor.idx).map(|t| t.kind.clone()).unwrap_or(
+                                TokenKinds::Control(crate::lexer::ControlTokenKind::Eof),
+                            );
                             err(
-                                ParseErrors::ExpectedToNotBe(tokens[cursor.idx].kind.clone()),
+                                ParseErrors::ExpectedToNotBe(kind),
                                 cursor,
                                 cursor_clone,
-                                &tokens[cursor.idx].location,
+                                &tokens[safe_idx].location,
                                 Some(node.clone()),
                                 Some(&parameters),
                             )?;
@@ -420,11 +423,6 @@ impl<'a> Parser<'a> {
                             .push(&mut msg_bus);
                         }
                         TokenCompare::IsNot(err) => {
-                            if let Some(ref node) = err.node {
-                                if node.commit {
-                                    return Err(err);
-                                }
-                            }
                             self.parse_rules(
                                 grammar,
                                 lexer,
@@ -437,6 +435,7 @@ impl<'a> Parser<'a> {
                                 text,
                             )?
                             .push(&mut msg_bus);
+                            return Err(err);
                         }
                     }
                 }
@@ -516,17 +515,25 @@ impl<'a> Parser<'a> {
                         }
                     }
                     if !found {
+                        let safe_cursor = cursor.idx.min(tokens.len().saturating_sub(1));
                         let peek =
-                            Self::next_non_whitespace(&tokens[cursor.idx..], &grammar.ignored)
+                            Self::next_non_whitespace(&tokens[safe_cursor..], &grammar.ignored)
                                 .unwrap_or(0);
+                        let err_idx = cursor.idx + peek;
+                        let safe_err_idx = err_idx.min(tokens.len().saturating_sub(1));
+                        let kind = tokens
+                            .get(err_idx)
+                            .map(|t| t.kind.clone())
+                            .unwrap_or(TokenKinds::Control(crate::lexer::ControlTokenKind::Eof));
+
                         err(
                             ParseErrors::ExpectedOneOf {
                                 expected: pos_tokens.iter().map(|x| x.token.clone()).collect(),
-                                found: tokens[cursor.idx + peek].kind.clone(),
+                                found: kind,
                             },
                             cursor,
                             cursor_clone,
-                            &tokens[cursor.idx + peek].location,
+                            &tokens[safe_err_idx].location,
                             Some(node.clone()),
                             Some(&parameters),
                         )?;
@@ -744,9 +751,10 @@ impl<'a> Parser<'a> {
                     rules,
                     parameters,
                 } => {
+                    let safe_idx = cursor.idx.min(tokens.len().saturating_sub(1));
                     Self::try_set_text_start_index(
                         node,
-                        &Nodes::Token(tokens[cursor.idx].clone()),
+                        &Nodes::Token(tokens[safe_idx].clone()), // Clamp this token
                         tokens,
                         &cursor,
                     );
@@ -774,7 +782,9 @@ impl<'a> Parser<'a> {
                             });
                         }
                     }
-                    let val = &Nodes::Token(tokens[cursor.idx].clone());
+
+                    let safe_val_idx = cursor.idx.min(tokens.len().saturating_sub(1));
+                    let val = &Nodes::Token(tokens[safe_val_idx].clone());
                     self.parse_parameters(
                         parameters,
                         cursor,
@@ -1001,17 +1011,25 @@ impl<'a> Parser<'a> {
                         cursor.idx += 1;
                     }
                     if !found {
+                        let safe_cursor = cursor.idx.min(tokens.len().saturating_sub(1));
                         let peek =
-                            Self::next_non_whitespace(&tokens[cursor.idx..], &grammar.ignored)
+                            Self::next_non_whitespace(&tokens[safe_cursor..], &grammar.ignored)
                                 .unwrap_or(0);
+                        let err_idx = cursor.idx + peek;
+                        let safe_err_idx = err_idx.min(tokens.len().saturating_sub(1));
+                        let kind = tokens
+                            .get(err_idx)
+                            .map(|t| t.kind.clone())
+                            .unwrap_or(TokenKinds::Control(crate::lexer::ControlTokenKind::Eof));
+
                         err(
                             ParseErrors::ExpectedOneOf {
                                 expected: match_tokens.iter().map(|x| x.token.clone()).collect(),
-                                found: tokens[cursor.idx + peek].kind.clone(),
+                                found: kind,
                             },
                             cursor,
                             cursor_clone,
-                            &tokens[cursor.idx + peek].location,
+                            &tokens[safe_err_idx].location,
                             Some(node.clone()),
                             None,
                         )?;
@@ -1099,8 +1117,6 @@ impl<'a> Parser<'a> {
                             node: Some(node.clone()),
                             hint: None,
                         });
-                    } else {
-                        cursor.idx -= 1;
                     }
                 }
             }

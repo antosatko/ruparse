@@ -199,13 +199,13 @@ where
     pub fn lex_utf8(&'a self, text: &'tok str) -> Result<Vec<Token<'tok>>, PreprocessorError> {
         let chars = text.char_indices().collect::<Vec<(usize, char)>>();
         let len = chars.len();
-        // the allocation is a guess, but it should be close enough
         let mut tokens = Vec::with_capacity(chars.len() / 4);
         let mut i = 0;
         let mut line = 0;
         let mut column = 0;
+
         'chars: while i < len {
-            // Take new line into account
+            // New line
             if chars[i].1 == '\n' {
                 line += 1;
                 column = 0;
@@ -219,33 +219,43 @@ where
                 continue;
             }
 
-            // Match token kinds
             'tokens: for token_kind in self.token_kinds.iter().rev() {
-                let tok_chars = token_kind.char_indices();
-                let tok_len = tok_chars.count();
-                if i + tok_len > len {
-                    // All the remaining tokens are longer than the remaining text
-                    //
-                    // This is a performance optimization
+                let tok_char_len = token_kind.chars().count();
+                if i + tok_char_len > len {
                     continue;
                 }
+                let mut matches = true;
                 for (j, (_, c)) in token_kind.char_indices().enumerate() {
                     if c != chars[i + j].1 {
-                        continue 'tokens;
+                        matches = false;
+                        break;
                     }
                 }
+                if !matches {
+                    continue 'tokens;
+                }
+
+                // Compute byte length
+                let start_byte = chars[i].0;
+                let end_byte = if i + tok_char_len < len {
+                    chars[i + tok_char_len].0
+                } else {
+                    text.len()
+                };
+                let byte_len = end_byte - start_byte;
+
                 tokens.push(Token {
-                    index: chars[i].0,
-                    len: tok_len,
-                    location: TextLocation::new(line, column, chars[i].0, tok_len),
-                    kind: TokenKinds::Token(&token_kind),
+                    index: start_byte,
+                    len: byte_len,
+                    location: TextLocation::new(line, column, start_byte, byte_len),
+                    kind: TokenKinds::Token(token_kind), // no extra &
                 });
-                i += tok_len;
-                column += tok_len;
+                i += tok_char_len;
+                column += tok_char_len;
                 continue 'chars;
             }
 
-            // Match whitespace
+            // Whitespace
             if chars[i].1.is_whitespace() {
                 tokens.push(Token {
                     index: chars[i].0,
@@ -258,54 +268,60 @@ where
                 continue;
             }
 
-            // Match text until next whitespace/token/eof
             let mut j = 0;
-            let mut token_len = 0;
+            let mut token_byte_len = 0;
             'word: while i + j < len {
                 if chars[i + j].1.is_whitespace() {
                     break;
                 }
-                token_len += chars[i + j].1.len_utf8();
+                token_byte_len += chars[i + j].1.len_utf8();
                 j += 1;
+
+                // Lookahead: does any token kind start exactly here?
                 for token_kind in &self.token_kinds {
-                    let start = i + j;
-                    let tok_len = token_kind.chars().count();
-                    let end = if i + j + tok_len < len {
-                        i + j + tok_len
+                    let start_char = i + j;
+                    let tok_char_len = token_kind.chars().count();
+
+                    if start_char + tok_char_len > len {
+                        continue; // cannot match – do NOT break text
+                    }
+
+                    let token_start_byte = chars[start_char].0;
+                    let token_end_byte = if start_char + tok_char_len < len {
+                        chars[start_char + tok_char_len].0
                     } else {
-                        break 'word;
+                        text.len()
                     };
-                    let token = &text[chars[start].0..chars[end].0];
-                    if token == *token_kind {
-                        break 'word;
+                    let candidate = &text[token_start_byte..token_end_byte];
+
+                    if candidate == *token_kind {
+                        break 'word; // real token starts here → stop text
                     }
                 }
             }
-            tokens.push(Token {
-                index: chars[i].0,
-                len: token_len,
-                location: TextLocation::new(line, column, chars[i].0, token_len),
-                kind: TokenKinds::Text,
-            });
-            column += j;
-            i += j;
+
+            if j > 0 {
+                tokens.push(Token {
+                    index: chars[i].0,
+                    len: token_byte_len,
+                    location: TextLocation::new(line, column, chars[i].0, token_byte_len),
+                    kind: TokenKinds::Text,
+                });
+                column += j;
+                i += j;
+            }
         }
+
         tokens.push(Token {
-            index: i,
+            index: text.len(),
             len: 0,
-            location: TextLocation::new(
-                line,
-                column,
-                chars.last().map(|(i, _)| *i).unwrap_or(0),
-                0,
-            ),
+            location: TextLocation::new(line, column, text.len(), 0),
             kind: TokenKinds::Control(ControlTokenKind::Eof),
         });
 
         for preprocessor in &self.preprocessors {
             tokens = preprocessor(text, &tokens)?;
         }
-
         Ok(tokens)
     }
 
