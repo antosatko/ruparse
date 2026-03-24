@@ -66,6 +66,7 @@ impl<'a> Parser<'a> {
                     location: TextLocation::new(0, 0, 0, 0),
                     node: None,
                     hint: Some("Set an entry point in the parser"),
+                    importance: 0,
                 })
             }
         };
@@ -106,6 +107,7 @@ impl<'a> Parser<'a> {
                             location: tokens[cursor.idx].location,
                             node: Some(node),
                             hint: Some("Remove all unneccesary text from the end of file"),
+                            importance: 0,
                         });
                     }
                 }
@@ -149,6 +151,7 @@ impl<'a> Parser<'a> {
                         location: tokens[cursor.idx].location,
                         node: Some(node.clone()),
                         hint: Some("Please run the parser through validator with .success()"),
+                        importance: 0,
                     },
                 ))
             }
@@ -193,6 +196,7 @@ impl<'a> Parser<'a> {
                         location: tokens[cursor.idx].location,
                         node: Some(node.clone()),
                         hint: None,
+                        importance: 0,
                     },
                 )),
                 Msg::Back(steps) => Err((
@@ -202,6 +206,7 @@ impl<'a> Parser<'a> {
                         location: tokens[cursor.idx].location,
                         node: Some(node.clone()),
                         hint: None,
+                        importance: 0,
                     },
                 )),
                 Msg::Goto(label) => Err((
@@ -211,6 +216,7 @@ impl<'a> Parser<'a> {
                         location: tokens[cursor.idx].location,
                         node: Some(node.clone()),
                         hint: None,
+                        importance: 0,
                     },
                 )),
             },
@@ -267,6 +273,7 @@ impl<'a> Parser<'a> {
                             location: tokens[cursor.idx - 1].location,
                             node: Some(node.clone()),
                             hint: None,
+                            importance: 0,
                         });
                     }
                 }
@@ -444,6 +451,7 @@ impl<'a> Parser<'a> {
                     parameters,
                 } => {
                     let mut found = false;
+                    let mut best_err: Option<ParseError<'_>> = None;
                     for OneOf {
                         token,
                         rules,
@@ -505,11 +513,23 @@ impl<'a> Parser<'a> {
                                         println!("non recoverable error: {:?}", err);
                                         return Err(err);
                                     }
+                                    if err.importance > 0
+                                        && err.importance
+                                            >= best_err.as_ref().map(|e| e.importance).unwrap_or(0)
+                                    {
+                                        best_err = Some(err);
+                                    }
                                 }
                                 None => {
                                     #[cfg(feature = "debug")]
                                     println!("recoverable error: {:?}", err);
                                     cursor.to_advance = false;
+                                    if err.importance > 0
+                                        && err.importance
+                                            >= best_err.as_ref().map(|e| e.importance).unwrap_or(0)
+                                    {
+                                        best_err = Some(err);
+                                    }
                                 }
                             },
                         }
@@ -526,17 +546,25 @@ impl<'a> Parser<'a> {
                             .map(|t| t.kind.clone())
                             .unwrap_or(TokenKinds::Control(crate::lexer::ControlTokenKind::Eof));
 
-                        err(
-                            ParseErrors::ExpectedOneOf {
-                                expected: pos_tokens.iter().map(|x| x.token.clone()).collect(),
-                                found: kind,
-                            },
-                            cursor,
-                            cursor_clone,
-                            &tokens[safe_err_idx].location,
-                            Some(node.clone()),
-                            Some(&parameters),
-                        )?;
+                        match best_err {
+                            Some(e) => return Err(e),
+                            None => {
+                                err(
+                                    ParseErrors::ExpectedOneOf {
+                                        expected: pos_tokens
+                                            .iter()
+                                            .map(|x| x.token.clone())
+                                            .collect(),
+                                        found: kind,
+                                    },
+                                    cursor,
+                                    cursor_clone,
+                                    &tokens[safe_err_idx].location,
+                                    Some(node.clone()),
+                                    Some(&parameters),
+                                )?;
+                            }
+                        }
                     }
                 }
                 grammar::Rule::Maybe {
@@ -779,6 +807,7 @@ impl<'a> Parser<'a> {
                                 location: tokens[cursor.idx - 1].location,
                                 node: Some(node.clone()),
                                 hint: None,
+                                importance: 0,
                             });
                         }
                     }
@@ -905,6 +934,7 @@ impl<'a> Parser<'a> {
                         location: tokens[cursor.idx].location,
                         node: Some(node.clone()),
                         hint: None,
+                        importance: 0,
                     })?,
                     grammar::Commands::Commit { set } => {
                         node.commit = *set;
@@ -1116,6 +1146,7 @@ impl<'a> Parser<'a> {
                             location: tokens[cursor.idx - 1].location,
                             node: Some(node.clone()),
                             hint: None,
+                            importance: 0,
                         });
                     }
                 }
@@ -1132,6 +1163,14 @@ impl<'a> Parser<'a> {
                 None
             }
         })
+    }
+
+    fn get_importance<'b>(parameters: Option<&'b [grammar::Parameters<'b>]>) -> usize {
+        parameters
+            .unwrap_or(&[])
+            .iter()
+            .filter(|p| matches!(p, grammar::Parameters::Important))
+            .count()
     }
 
     fn match_token(
@@ -1165,6 +1204,7 @@ impl<'a> Parser<'a> {
                         location: tokens[cursor.idx - 1].location,
                         node: None,
                         hint: Self::find_hint(parameters),
+                        importance: Self::get_importance(parameters),
                     }));
                 }
 
@@ -1204,6 +1244,7 @@ impl<'a> Parser<'a> {
                         location: current_token.location,
                         node: None,
                         hint: Self::find_hint(parameters),
+                        importance: Self::get_importance(parameters),
                     }));
                 }
                 cursor.idx += peek;
@@ -1248,6 +1289,7 @@ impl<'a> Parser<'a> {
                             location: current_token.location,
                             node: None,
                             hint: Self::find_hint(parameters),
+                            importance: Self::get_importance(parameters),
                         }));
                     }
                 }
@@ -1263,9 +1305,11 @@ impl<'a> Parser<'a> {
                             location: tokens[cursor.idx].location,
                             node: None,
                             hint: Self::find_hint(parameters),
+                            importance: Self::get_importance(parameters),
                         });
                     }
                 };
+                let mut best_err: Option<ParseError<'_>> = None;
                 let mut i = 0;
                 let cursor_clone_local = cursor.clone();
                 let token = loop {
@@ -1273,15 +1317,21 @@ impl<'a> Parser<'a> {
                         let peek =
                             Self::next_non_whitespace(&tokens[cursor.idx..], &grammar.ignored)
                                 .unwrap_or(0);
-                        return Ok(TokenCompare::IsNot(ParseError {
-                            kind: ParseErrors::ExpectedOneOf {
-                                expected: enumerator.values.to_vec(),
-                                found: tokens[cursor.idx + peek].kind.clone(),
-                            },
-                            location: tokens[cursor.idx + peek].location,
-                            node: None,
-                            hint: Self::find_hint(parameters),
-                        }));
+                        match best_err {
+                            Some(e) => return Err(e),
+                            None => {
+                                return Ok(TokenCompare::IsNot(ParseError {
+                                    kind: ParseErrors::ExpectedOneOf {
+                                        expected: enumerator.values.to_vec(),
+                                        found: tokens[cursor.idx + peek].kind.clone(),
+                                    },
+                                    location: tokens[cursor.idx + peek].location,
+                                    node: None,
+                                    hint: Self::find_hint(parameters),
+                                    importance: Self::get_importance(parameters),
+                                }))
+                            }
+                        }
                     }
                     let token = &enumerator.values[i];
                     match self.match_token(
@@ -1303,6 +1353,12 @@ impl<'a> Parser<'a> {
                                 if node.commit {
                                     return Err(Self::attach_hint(err, parameters));
                                 }
+                            }
+                            if err.importance > 0
+                                && err.importance
+                                    >= best_err.as_ref().map(|e| e.importance).unwrap_or(0)
+                            {
+                                best_err = Some(err);
                             }
                             i += 1;
                         }
@@ -1370,6 +1426,7 @@ impl<'a> Parser<'a> {
                             location: tokens[cursor.idx].location,
                             node: None,
                             hint: None,
+                            importance: 0,
                         })?,
                     };
                 }
@@ -1406,6 +1463,7 @@ impl<'a> Parser<'a> {
                             location: tokens[cursor.idx].location,
                             node: None,
                             hint: None,
+                            importance: 0,
                         })?,
                     };
                 }
@@ -1420,6 +1478,7 @@ impl<'a> Parser<'a> {
                             kind: ParseErrors::UncountableVariable(*ident, kind.clone()),
                             location: tokens[cursor.idx].location,
                             node: None,
+                            importance: 0,
                         })?,
                     };
                 }
@@ -1433,6 +1492,7 @@ impl<'a> Parser<'a> {
                             kind: ParseErrors::UncountableVariable(*variable, kind.clone()),
                             location: tokens[cursor.idx].location,
                             node: None,
+                            importance: 0,
                         });
                     }
                 }
@@ -1446,6 +1506,7 @@ impl<'a> Parser<'a> {
                             kind: ParseErrors::UncountableVariable(*variable, kind.clone()),
                             location: tokens[cursor.idx].location,
                             node: None,
+                            importance: 0,
                         });
                     }
                 }
@@ -1480,8 +1541,10 @@ impl<'a> Parser<'a> {
                         location: tokens[cursor.idx].location,
                         node: None,
                         hint: Self::find_hint(Some(parameters)),
+                        importance: Self::get_importance(Some(parameters)),
                     })
                 }
+                &grammar::Parameters::Important => (),
             }
         }
         Ok(())
@@ -1673,6 +1736,7 @@ impl<'a> Node<'a> {
                     kind: ParseErrors::NodeNotFound(name),
                     location: TextLocation::new(0, 0, 0, 0),
                     node: None,
+                    importance: 0,
                 })
             }
         };
@@ -1713,6 +1777,7 @@ fn err<'a>(
         location: *location,
         node,
         hint: Parser::find_hint(parameters),
+        importance: Parser::get_importance(parameters),
     })
 }
 
@@ -1805,6 +1870,7 @@ pub struct ParseError<'a> {
     pub location: TextLocation,
     pub node: Option<Node<'a>>,
     pub hint: Option<&'a str>,
+    pub importance: usize,
 }
 
 impl<'a> fmt::Debug for ParseError<'a> {

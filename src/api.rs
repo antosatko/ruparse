@@ -618,7 +618,7 @@ pub mod ext {
                 variables: self.variables,
                 docs: self.docs,
             };
-            self.grammar.add_node(n);
+            assert!(self.grammar.add_node(n), "Node already exists");
             node(self.name)
         }
         pub fn has(self, token: MatchToken<'a>, var: &'a str) -> Self {
@@ -644,7 +644,7 @@ pub mod ext {
                 name: self.name,
                 values: self.options,
             };
-            self.grammar.add_enum(e);
+            assert!(self.grammar.add_enum(e), "Enumerator already exists");
             enumerator(self.name)
         }
     }

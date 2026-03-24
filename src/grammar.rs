@@ -377,6 +377,8 @@ pub enum Parameters<'a> {
     NodeEnd,
     /// Display a hint inside an error message
     Hint(&'a str),
+    /// Hints to the parser that this error should get priority
+    Important,
     /// Rule results in a failure and displays message
     Fail(&'a ErrorDefinition),
 }
@@ -1009,6 +1011,7 @@ pub mod validator {
                     Parameters::NodeStart => (),
                     Parameters::NodeEnd => (),
                     Parameters::Hint(_) => (),
+                    Parameters::Important => (),
                     Parameters::CloneValue(var1, var2) => {
                         match (
                             var1.kind(&node.variables, &parser.grammar.globals),
