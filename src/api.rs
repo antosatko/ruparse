@@ -433,6 +433,9 @@ pub mod ext {
         pub fn set(self, var: impl IntoVarKind<'a>) -> Self {
             self.params([Parameters::Set(var.into_varkind())])
         }
+        pub fn important(self) -> Self {
+            self.params([Parameters::Important])
+        }
         pub fn fail(self, err: &'a ErrorDefinition) -> Self {
             self.params([Parameters::Fail(err)])
         }
@@ -523,6 +526,9 @@ pub mod ext {
         }
         pub fn set(self, var: impl IntoVarKind<'a>) -> Self {
             self.params([Parameters::Set(var.into_varkind())])
+        }
+        pub fn important(self) -> Self {
+            self.params([Parameters::Important])
         }
         pub fn fail(self, err: &'a ErrorDefinition) -> Self {
             self.params([Parameters::Fail(err)])
