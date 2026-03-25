@@ -1421,13 +1421,10 @@ impl<'a> Parser<'a> {
                         VariableKind::NodeList(list) => {
                             list.push(value.clone());
                         }
-                        _ => Err(ParseError {
-                            kind: ParseErrors::CannotSetVariable(*name, kind.clone()),
-                            location: tokens[cursor.idx].location,
-                            node: None,
-                            hint: None,
-                            importance: 0,
-                        })?,
+                        VariableKind::Boolean(bol) => {
+                            *bol = true;
+                        }
+                        VariableKind::Number(n) => *n += 1,
                     };
                 }
                 grammar::Parameters::Print(_str) => {

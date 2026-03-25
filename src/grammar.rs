@@ -864,16 +864,7 @@ pub mod validator {
                 match parameter {
                     Parameters::Set(name) => {
                         match name.kind(&node.variables, &parser.grammar.globals) {
-                            Some(var) => match var {
-                                VariableKind::Node => (),
-                                VariableKind::NodeList => (),
-                                VariableKind::Boolean | VariableKind::Number => {
-                                    result.errors.push(ValidationError {
-                                        kind: ValidationErrors::CantUseVariable(*name),
-                                        node: Some(node),
-                                    })
-                                }
-                            },
+                            Some(_) => (),
                             None => {
                                 result.errors.push(ValidationError {
                                     kind: ValidationErrors::VariableNotFound(*name),
