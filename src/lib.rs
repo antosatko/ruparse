@@ -69,7 +69,7 @@ where
 mod tests {
 
     use core::panic;
-    use std::time::Instant;
+    use std::{path::Path, time::Instant};
 
     use crate::{
         api::ext::{enumerator, local, node, text, token, word},
@@ -181,7 +181,8 @@ mod tests {
                     "Parsing ended on an error, duration: {:?}",
                     start_time.elapsed()
                 );
-                e.print(txt, Some(&format!("{}-test", file!()))).unwrap();
+                e.print(txt, Some(&Path::new(&format!("{}-test", file!()))))
+                    .unwrap();
                 panic!("");
             }
         }

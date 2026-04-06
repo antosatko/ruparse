@@ -1,4 +1,4 @@
-use std::{borrow::Cow, fmt::Write};
+use std::{borrow::Cow, fmt::Write, path::Path};
 
 use annotate_snippets::{renderer::DecorStyle, AnnotationKind, Group, Level, Renderer, Snippet};
 
@@ -52,7 +52,7 @@ impl<'a> ParseError<'a> {
         &self,
         w: &mut impl Write,
         txt: &'a str,
-        filename: Option<&str>,
+        filepath: Option<&Path>,
     ) -> std::fmt::Result {
         let (id, header) = self.kind.id_and_header();
         let span = self.location.index..self.location.index + self.location.len;
@@ -67,8 +67,8 @@ impl<'a> ParseError<'a> {
             //         .span(self.location.index - 5..self.location.index + self.location.len),
             // )
             .fold(true);
-        if let Some(file) = filename {
-            snippet = snippet.path(file);
+        if let Some(file) = filepath {
+            snippet = snippet.path(file.to_str());
         }
         let header: Cow<'a, str> = match &self.node {
             Some(n) => format!("{header} while parsing {}", n.name).into(),
@@ -112,7 +112,7 @@ impl<'a> ParseError<'a> {
         write!(w, "{render}")
     }
 
-    pub fn print(&self, txt: &'a str, filename: Option<&str>) -> std::fmt::Result {
+    pub fn print(&self, txt: &'a str, filename: Option<&Path>) -> std::fmt::Result {
         let mut buf = String::new();
         self.write(&mut buf, txt, filename)?;
         println!("{buf}");
@@ -121,7 +121,12 @@ impl<'a> ParseError<'a> {
 }
 
 impl PreprocessorError {
-    pub fn write(&self, w: &mut impl Write, txt: &str, filename: Option<&str>) -> std::fmt::Result {
+    pub fn write(
+        &self,
+        w: &mut impl Write,
+        txt: &str,
+        filename: Option<&Path>,
+    ) -> std::fmt::Result {
         let span = self.location.index..self.location.index + self.len;
         let mut snippet = Snippet::source(txt)
             .annotation(
@@ -131,7 +136,7 @@ impl PreprocessorError {
             )
             .fold(true);
         if let Some(file) = filename {
-            snippet = snippet.path(file);
+            snippet = snippet.path(file.to_str());
         }
         let report = Group::with_title(
             Level::ERROR
@@ -148,7 +153,7 @@ impl PreprocessorError {
         write!(w, "{render}")
     }
 
-    pub fn print(&self, txt: &str, filename: Option<&str>) -> std::fmt::Result {
+    pub fn print(&self, txt: &str, filename: Option<&Path>) -> std::fmt::Result {
         let mut buf = String::new();
         self.write(&mut buf, txt, filename)?;
         println!("{buf}");
